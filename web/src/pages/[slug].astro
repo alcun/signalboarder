@@ -1,0 +1,11 @@
+---
+import Base from "../layouts/Base.astro";
+import { PAGES } from "../lib/pages";
+
+export function getStaticPaths() {
+  return PAGES.filter((page) => page.slug).map((page) => ({ params: { slug: page.slug }, props: { page } }));
+}
+
+const { page } = Astro.props;
+---
+<Base page={page} />

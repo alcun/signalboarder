@@ -1,0 +1,183 @@
+---
+import { AUTHOR_URL, PAGES, type PageDef } from "../lib/pages";
+import TrainFooter from "../components/TrainFooter.astro";
+import "../styles/board.css";
+import "../styles/page.css";
+
+interface Props { page: PageDef }
+
+const { page } = Astro.props;
+const canonical = new URL(page.slug ? `/${page.slug}` : "/", Astro.site).href;
+const ogImage = new URL("/og.png", Astro.site).href;
+const indexable = import.meta.env.PUBLIC_INDEXABLE === "true";
+
+// Both are BUILD-time values baked by web/Dockerfile's ARG defaults. A host's
+// runtime environment variables do not reliably reach a Dockerfile's build
+// args, so the ARG default is the real value for a deployment, not the
+// variable you set on the platform. Check what you built, do not assume.
+// Empty when nothing was configured, which is what `npm run dev` sees.
+const apiBase = import.meta.env.PUBLIC_SIGNALBOARDER_API ?? "";
+const lizardKey = import.meta.env.PUBLIC_LIZARD_KEY ?? "";
+
+const faq = [
+  ["Is Signalboarder free?", "Yes. The hosted departure board has no account, signup or paid tier."],
+  ["Does Signalboarder store my journeys?", "No. Signalboarder has no user database and stores no journey or station history. Your browser can remember a station locally on your own device."],
+  ["Where do the live departures come from?", "Signalboarder's gateway reads National Rail's Darwin live departure data and returns a small, consistent board model to the browser and physical board."],
+  ["Is there a physical Signalboarder board?", "Yes. Signalboarder also runs on a purpose-built ESP32-S3 board with an AMOLED display. The physical board and browser use the same departure model."],
+  ["How do I run it full screen?", "Use the Full screen button in the header. It calls the browser's Fullscreen API and holds a wake lock, so the screen will not sleep while the board is up. The button only appears where that API exists, so on a browser without it, install Signalboarder instead: it is a progressive web app, so Add to home screen or Install gives you a standalone window with no browser chrome and the same result."],
+] as const;
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebApplication",
+      name: "Signalboarder",
+      alternateName: page.h1,
+      url: canonical,
+      description: page.description,
+      applicationCategory: "TravelApplication",
+      operatingSystem: "Any modern browser",
+      browserRequirements: "Requires JavaScript for live departures",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "GBP" },
+      author: { "@type": "Person", name: "Alasdair Cunningham", url: AUTHOR_URL },
+      image: ogImage,
+    },
+    {
+      "@type": "FAQPage",
+      mainEntity: faq.map(([name, text]) => ({
+        "@type": "Question",
+        name,
+        acceptedAnswer: { "@type": "Answer", text },
+      })),
+    },
+  ],
+};
+---
+
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{page.title}</title>
+    <meta name="description" content={page.description} />
+    <link rel="canonical" href={canonical} />
+    {!indexable && <meta name="robots" content="noindex, nofollow" />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/icon-192.png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Signalboarder" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Signalboarder" />
+    <meta property="og:title" content={page.title} />
+    <meta property="og:description" content={page.description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={page.title} />
+    <meta name="twitter:description" content={page.description} />
+    <meta name="twitter:image" content={ogImage} />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <!--
+      Where the board looks for its gateway.
+
+      PUBLIC_SIGNALBOARDER_API is baked at BUILD time (see Dockerfile). Empty
+      means same-origin, so a reusable build can never silently spend another
+      operator's National Rail budget.
+
+      An explicit value ALWAYS wins. The private-hostname fallback below only
+      applies to a build that configured nothing, which is `npm run dev`. It has
+      to be that way round: a self-hoster on localhost with the gateway on any
+      port but 3000 would otherwise be silently overruled by the convenience
+      rule, and their board would look fine while calling nothing.
+    -->
+    <script is:inline define:vars={{ initialCrs: page.crs ?? "", configuredApi: apiBase }}>
+      window.SIGNALBOARDER_INITIAL_CRS = initialCrs;
+      window.SIGNALBOARDER_API =
+        configuredApi ||
+        location.origin;
+    </script>
+
+    <!--
+      LoggerLizard analytics. A PUBLIC key, whitelisted to signalboarder.alcun.dev and
+      localhost, so it is meant to be readable here - a public key with no
+      domain list is refused outright, which is what makes publishing it safe.
+      Same project as the edge's server-side events, so a board opening and the
+      departure lookups behind it read as one story.
+
+      Built from PUBLIC_LIZARD_KEY so a self-hosted board ships no analytics at
+      all rather than an external request to our tag on every page load. Empty
+      means the script is simply absent.
+    -->
+    {lizardKey && (
+      <script
+        src="https://api.loggerlizard.com/js/lizard.js"
+        data-api-key={lizardKey}
+        is:inline></script>
+    )}
+  </head>
+  <body>
+    <main class="board" aria-live="polite">
+      <header class="board__head">
+        <button type="button" class="board__full" id="fullscreen" hidden>Full screen</button>
+        <button type="button" class="board__station" id="station-button" aria-label="Change station"><span id="station-name">{page.crs ? page.navLabel : "Signalboarder"}</span></button>
+        <time class="board__date" id="board-date"></time>
+      </header>
+      <div class="board__rows">
+        <ol class="board__services" id="services"></ol>
+        <div class="welcome" id="welcome" hidden>
+          <p class="welcome__eyebrow">Live UK train departures</p>
+          <p class="welcome__line">Turn any device<br />into a departure board.</p>
+          <button class="welcome__action" id="choose-station" type="button">Choose a station</button>
+        </div>
+        <p class="empty" id="empty" hidden>No services</p>
+        <p class="loading" id="loading" role="status" aria-label="Loading" hidden><span class="loading__dot"></span><span class="loading__dot"></span><span class="loading__dot"></span></p>
+      </div>
+      <button type="button" class="clock" id="clock" aria-label="Current time. Tap to show every departure." title="Tap for every departure">--:--</button>
+      <p class="board__alert" id="alert" role="status">Choose a station</p>
+      <form class="picker" id="picker" hidden role="search">
+        <label class="picker__label" for="crs">Station</label>
+        <input class="picker__input" id="crs" name="crs" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="Glasgow Central or GLC" role="combobox" aria-expanded="false" aria-controls="results" aria-autocomplete="list" required />
+        <button class="picker__go" type="submit">Show</button>
+        <ul class="picker__results" id="results" role="listbox" aria-label="Matching stations" hidden></ul>
+      </form>
+    </main>
+    <p class="meta" id="meta"></p>
+    <footer class="credit">
+      <span id="attribution">Powered by National Rail Enquiries</span><span class="credit__sep">·</span>
+      <span>Station list by <a href="https://github.com/davwheat/uk-railway-stations">Dav Wheat</a> and <a href="https://github.com/trainline-eu/stations">Trainline EU</a>, ODbL</span><span class="credit__sep">·</span>
+      <span>Made by <a href={AUTHOR_URL}>alcun.dev</a></span>
+    </footer>
+
+    <section class="about">
+      <h1>{page.h1}</h1>
+      {page.body.map((paragraph) => <p>{paragraph}</p>)}
+      <div class="make-board">
+        <p class="make-board__eyebrow">Make it a board</p>
+        <ol>
+          <li><span>01</span><strong>Choose a station</strong><small>Search any UK station by name or CRS code.</small></li>
+          <li><span>02</span><strong>Pick your view</strong><small>Next three trains, or tap the clock for the concourse.</small></li>
+          <li><span>03</span><strong>Leave it running</strong><small>Go full screen, or add Signalboarder to your home screen.</small></li>
+        </ol>
+      </div>
+      <h2>Common questions</h2>
+      <dl class="faq">{faq.map(([question, answer]) => <><dt>{question}</dt><dd>{answer}</dd></>)}</dl>
+      <nav class="other" aria-label="Signalboarder pages">
+        <h2>More Signalboarder boards</h2>
+        <ul>{PAGES.filter((other) => other.slug !== page.slug).map((other) => <li><a href={other.slug ? `/${other.slug}` : "/"}>{other.navLabel}</a></li>)}</ul>
+      </nav>
+    </section>
+    <TrainFooter authorUrl={AUTHOR_URL} />
+    <noscript><p class="noscript">Signalboarder needs JavaScript to fetch live departures. The information about Signalboarder on this page remains available.</p></noscript>
+    <script src="../scripts/board.ts"></script>
+  </body>
+</html>

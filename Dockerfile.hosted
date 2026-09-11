@@ -1,0 +1,31 @@
+# Hosted deployment profile. Generic self-hosts use Dockerfile, whose defaults
+# are deliberately neutral.
+FROM node:22-alpine AS web
+WORKDIR /app/web
+COPY web/package*.json ./
+RUN npm install --no-audit --no-fund
+COPY web/ ./
+ENV PUBLIC_SITE_URL=https://signalboarder.alcun.dev
+ENV PUBLIC_INDEXABLE=true
+ENV PUBLIC_SIGNALBOARDER_API=https://signalboarder.alcun.dev
+ENV PUBLIC_LIZARD_KEY=llz_pub_5ffbceb35eae4f5ab3f62c1254c7ff35
+RUN npm run build
+
+FROM oven/bun:1.3.14-slim AS deps
+WORKDIR /app/edge
+COPY edge/package.json edge/bun.lock ./
+RUN bun install --frozen-lockfile --production
+
+FROM oven/bun:1.3.14-slim AS runtime
+WORKDIR /app
+COPY --from=deps /app/edge/node_modules ./edge/node_modules
+COPY edge/package.json ./edge/
+COPY edge/src ./edge/src
+COPY --from=web /app/web/dist ./web
+ENV PORT=3000 SIGNALBOARDER_WEB_ROOT=/app/web SIGNALBOARDER_TRUST_PROXY=true
+EXPOSE 3000
+USER bun
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD bun -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["bun", "run", "edge/src/index.ts"]
+

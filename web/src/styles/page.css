@@ -1,0 +1,183 @@
+.about,
+.noscript {
+  max-width: 68ch;
+  margin-left: auto;
+  margin-right: auto;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.about {
+  padding: clamp(4rem, 10vw, 8rem) 0 1rem;
+  color: #c68a14;
+  font-family: var(--face);
+  font-size: clamp(0.95rem, 1.8vw, 1.08rem);
+  line-height: 1.8;
+}
+
+.about h1 {
+  margin: 0 0 1.5rem;
+  color: var(--ink);
+  font-family: var(--face-bold);
+  font-size: clamp(1.65rem, 4vw, 2.5rem);
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.about h2 {
+  margin: 3rem 0 1rem;
+  color: var(--ink-dim);
+  font-size: 0.9rem;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.about p { margin: 0 0 1.25rem; }
+
+.make-board {
+  margin: clamp(3rem, 8vw, 5rem) 0;
+  padding: clamp(1.4rem, 4vw, 2.3rem);
+  border: 1px solid var(--ink-dim);
+  background: linear-gradient(135deg, rgba(255, 176, 0, 0.055), transparent 58%);
+}
+
+.make-board__eyebrow {
+  color: var(--ink-dim);
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.make-board ol {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin: 1.8rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.make-board li { min-width: 0; }
+.make-board li span { display: block; color: var(--ink-dim); font-size: 0.72rem; }
+.make-board li strong { display: block; margin: 0.45rem 0; color: var(--ink); font-weight: 400; }
+.make-board li small { display: block; color: #a87513; font-size: 0.82rem; line-height: 1.55; }
+
+@media (max-width: 38rem) {
+  .make-board ol { grid-template-columns: 1fr; }
+  .make-board li { display: grid; grid-template-columns: 2.4rem 1fr; }
+  .make-board li span { grid-row: 1 / 3; }
+  .make-board li strong { margin-top: 0; }
+}
+.faq { margin: 0; }
+.faq dt { margin-top: 1.25rem; color: var(--ink); }
+.faq dd { margin: 0.35rem 0 0; }
+.other ul { display: flex; flex-wrap: wrap; gap: 0.7rem 1.4rem; margin: 0; padding: 0; list-style: none; }
+.about a, .train-footer a { color: var(--ink); text-underline-offset: 0.25em; }
+
+.train-footer {
+  margin-top: clamp(5rem, 12vw, 9rem);
+  /* Full bleed by cancelling body's own gutter, NOT by `100vw` and a negative
+     half-margin. `100vw` counts the scrollbar, so with a classic one the scene
+     landed 5px off: hanging past the left edge and stopping short of the right.
+     Measured, not guessed. Undoing the padding is exact whatever the scrollbar
+     is doing, because it is the same value body used. */
+  margin-left: calc(-1 * max(var(--edge), env(safe-area-inset-left)));
+  margin-right: calc(-1 * max(var(--edge), env(safe-area-inset-right)));
+  overflow: hidden;
+  overflow: clip;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+}
+
+.train-footer__credit {
+  max-width: 68ch;
+  margin: 0 auto;
+  margin-top: 4rem;
+  padding: 2rem max(var(--edge), env(safe-area-inset-right)) 2.5rem max(var(--edge), env(safe-area-inset-left));
+  border-top: 1px solid var(--ink-dim);
+  font-size: 0.78rem;
+  line-height: 1.8;
+  text-align: center;
+}
+
+.train-footer__credit p { margin: 0; }
+
+.train-scene {
+  position: relative;
+  height: clamp(12rem, 24vw, 19rem);
+  /* clip, not hidden. `overflow: hidden` is a scroll container, and a
+     transformed descendant still counts towards its scrollable overflow, so
+     from the moment the train's right edge passes the right edge of the scene
+     Chrome recomputes scroll geometry on every frame. That onset is the judder.
+     `overflow: clip` is not a scroll container, so the train contributes
+     nothing. `hidden` first as the fallback for anything without clip. */
+  overflow: hidden;
+  overflow: clip;
+  color: var(--ink);
+}
+
+.train-scene__train {
+  --train-width: clamp(58rem, 92vw, 82rem);
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  bottom: clamp(2.35rem, 4.5vw, 4rem);
+  width: var(--train-width);
+  height: auto;
+  transform: translateX(-100%);
+  will-change: transform;
+  /* The pass is one long composited slide of a wide raster. Keep it on its own
+     layer with nothing else folded into it. */
+  backface-visibility: hidden;
+  contain: paint;
+}
+
+.train-scene__rail,
+.train-scene__sleepers {
+  position: absolute;
+  right: 0;
+  left: 0;
+  background-repeat: repeat-x;
+  /* Both of these sit ABOVE the moving train, so the compositor has to lift
+     them onto their own layer to keep the z-order while the train's layer
+     slides underneath. Say so up front. Left to work it out on its own it can
+     decide part way through the pass, and re-layerising mid-animation is a
+     dropped frame. */
+  will-change: transform;
+}
+
+.train-scene__rail {
+  z-index: 3;
+  height: 6px;
+  background-image: radial-gradient(circle, var(--ink) 0 2px, transparent 2.5px);
+  background-size: 11px 6px;
+}
+
+.train-scene__rail--top { bottom: clamp(2.7rem, 5vw, 4.3rem); }
+
+.train-scene__sleepers {
+  bottom: 0;
+  height: clamp(2.4rem, 4.6vw, 4rem);
+  opacity: .38;
+  background-image: radial-gradient(circle, var(--ink) 0 2px, transparent 2.5px);
+  background-size: 11px 11px;
+  mask-image: repeating-linear-gradient(90deg, #000 0 32px, transparent 32px 47px);
+}
+
+@media (max-width: 38rem) {
+  .train-footer__credit { border-top: 0; }
+  .train-scene { height: 13rem; }
+  .train-scene__train { --train-width: 58rem; bottom: 2.35rem; }
+  .train-scene__rail--top { bottom: 2.7rem; }
+  .train-scene__sleepers { height: 2.4rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .train-scene__train {
+    transform: translateX(-18%);
+    will-change: auto;
+  }
+}
+
+.noscript { color: var(--alert); padding: 1rem 0; }

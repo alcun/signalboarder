@@ -1,0 +1,107 @@
+---
+interface Props { authorUrl: string }
+
+const { authorUrl } = Astro.props;
+---
+
+<footer class="train-footer" id="train-footer">
+  <div class="train-footer__credit">
+    <p>Live data powered by National Rail Enquiries</p>
+    <p>Made by <a href={authorUrl}>alcun.dev</a></p>
+  </div>
+
+  <div class="train-scene" aria-hidden="true">
+    <img
+      class="train-scene__train"
+      src="/train-footer.png"
+      alt=""
+      width="1320"
+      height="202"
+      decoding="sync"
+    />
+    <div class="train-scene__rail train-scene__rail--top"></div>
+    <div class="train-scene__sleepers"></div>
+  </div>
+</footer>
+
+<script>
+  // A train when scrolling stops, then one every twelve seconds while the
+  // footer is on screen.
+  //
+  // The judder was never the artwork, the units or the animation API. It was
+  // that the pass began a quarter of a second after the reader's last scroll
+  // event, on top of the work a browser does to settle a long page after a
+  // scroll. So departure waits for real quiet: `scrollend` where it exists,
+  // which is the precise signal and much sooner than an idle timer, and an idle
+  // timer where it does not, with a ceiling so a trackpad that never quite
+  // stops still gets its train.
+  //
+  // The repeat re-runs the SAME shape of pass rather than becoming one long
+  // looping animation. A single infinite animation with a parked segment was
+  // tried and its first crossing juddered again; this one is known good, so it
+  // is left exactly as it is and simply run again.
+  const CROSS = 3000; // how long one pass takes
+  const REPEAT = 12000; // and how often another comes
+  const GRACE = 800; // quiet after scrolling stops before the first one
+  const CEILING = 5000; // but leave anyway rather than never leaving
+
+  const train = document.querySelector<HTMLImageElement>(".train-scene__train");
+  const scene = document.querySelector<HTMLElement>(".train-scene");
+
+  if (train && scene && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    train.decode().then(() => {
+      let current: Animation | undefined;
+      let repeating: number | undefined;
+      let settling: number | undefined;
+      let gone = false;
+
+      const pass = () => {
+        current?.cancel();
+        current = train.animate(
+          [
+            { transform: `translateX(${-train.getBoundingClientRect().width}px)` },
+            { transform: `translateX(${window.innerWidth}px)` },
+          ],
+          { duration: CROSS, easing: "linear", fill: "forwards" },
+        );
+      };
+
+      const depart = () => {
+        if (gone) return;
+        gone = true;
+        window.clearTimeout(settling);
+        window.removeEventListener("scroll", settle);
+        pass();
+        repeating = window.setInterval(pass, REPEAT);
+      };
+
+      const settle = () => {
+        window.clearTimeout(settling);
+        settling = window.setTimeout(depart, GRACE);
+      };
+
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry?.isIntersecting) {
+            if (gone) {
+              // Back at the footer: start the trains again, do not restart the
+              // one that may still be crossing.
+              repeating ??= window.setInterval(pass, REPEAT);
+              return;
+            }
+            window.addEventListener("scroll", settle, { passive: true });
+            window.addEventListener("scrollend", () => window.setTimeout(depart, GRACE), { once: true });
+            window.setTimeout(depart, CEILING);
+            settle();
+          } else if (repeating) {
+            // Nothing to watch, so stop making trains.
+            window.clearInterval(repeating);
+            repeating = undefined;
+          }
+        },
+        { threshold: 0.4 },
+      );
+      observer.observe(scene);
+    });
+  }
+</script>

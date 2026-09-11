@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo 'How should Signalboarder get departures?'
+echo '  1) My own National Rail key (recommended)'
+echo '  2) The hosted Signalboarder service'
+echo '  3) Local demo departures'
+printf 'Choice [1]: '
+IFS= read -r choice
+choice=${choice:-1}
+
+rail_key=''
+rail_url=''
+provider=fixture
+api_origin=''
+
+if [[ "$choice" == "1" ]]; then
+  echo
+  echo 'Get a key at https://raildata.org.uk/'
+  echo 'Register, subscribe to Live Departure Board, then open the application.'
+  echo 'The application holds both the endpoint and consumer key.'
+  echo
+  printf 'National Rail consumer key: '
+  IFS= read -rs rail_key
+  printf '\n'
+  if [[ -z "$rail_key" ]]; then
+    echo "A consumer key is required for this choice."
+    exit 1
+  fi
+  printf 'Live Departure Board endpoint: '
+  IFS= read -r rail_url
+  if [[ -z "$rail_url" ]]; then
+    echo "The endpoint is required when a consumer key is supplied."
+    exit 1
+  fi
+  provider=ldbws
+elif [[ "$choice" == "2" ]]; then
+  api_origin=https://signalboarder.alcun.dev
+elif [[ "$choice" != "3" ]]; then
+  echo "Choose 1, 2 or 3."
+  exit 1
+fi
+
+printf 'Public origin [http://localhost:3000]: '
+IFS= read -r public_origin
+public_origin=${public_origin:-http://localhost:3000}
+api_origin=${api_origin:-$public_origin}
+
+umask 077
+{
+  printf 'SIGNALBOARDER_PROVIDER=%s\n' "$provider"
+  printf 'SIGNALBOARDER_LDBWS_URL=%s\n' "$rail_url"
+  printf 'SIGNALBOARDER_LDBWS_KEY=%s\n' "$rail_key"
+  printf 'SIGNALBOARDER_ALLOWED_ORIGINS=%s\n' "$public_origin"
+  printf 'PUBLIC_SITE_URL=%s\n' "$public_origin"
+  printf 'PUBLIC_SIGNALBOARDER_API=%s\n' "$api_origin"
+  printf 'PUBLIC_INDEXABLE=false\n'
+  printf 'SIGNALBOARDER_WEB_ROOT=./web/dist\n'
+} >.env
+
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  docker compose up -d --build
+  echo
+  echo "Signalboarder is running at $public_origin"
+elif [[ $(uname -s) == "Darwin" ]]; then
+  if ! command -v bun >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+    echo "Install Bun and Node, or Docker, then run ./setup again."
+    exit 1
+  fi
+  echo "Building Signalboarder..."
+  (cd web && npm ci && PUBLIC_SITE_URL="$public_origin" \
+    PUBLIC_SIGNALBOARDER_API="$api_origin" PUBLIC_INDEXABLE=false npm run build)
+  (cd edge && bun install --frozen-lockfile)
+  echo
+  echo "Signalboarder is running at $public_origin"
+  echo "Press Ctrl-C to stop it."
+  exec bun run edge/src/index.ts
+else
+  echo "Install Docker, or install Bun and npm, then run ./setup again."
+  exit 1
+fi

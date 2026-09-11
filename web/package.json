@@ -1,0 +1,18 @@
+{
+  "name": "signalboarder-web",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The hosted Signalboarder departure board",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "test": "bun test",
+    "stations": "node scripts/build-stations.mjs data/stations.csv public/stations.json"
+  },
+  "dependencies": {
+    "astro": "^7.1.1"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.astro/
+.env
+.env.*
+# ...but the template is the point of a self-hostable repo.
+!.env.example

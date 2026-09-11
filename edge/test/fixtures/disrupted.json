@@ -1,0 +1,19 @@
+{
+  "locationName": "Greenwich",
+  "trainServices": [
+    {
+      "std": "13:41",
+      "etd": "13:49",
+      "platform": "1",
+      "isCancelled": false,
+      "destination": [{"locationName": "London Cannon Street"}]
+    },
+    {
+      "std": "13:52",
+      "etd": "Cancelled",
+      "platform": "2",
+      "isCancelled": true,
+      "destination": [{"locationName": "Dartford"}]
+    }
+  ]
+}
