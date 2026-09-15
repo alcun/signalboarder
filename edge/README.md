@@ -223,13 +223,15 @@ same code again. Queries shorter than three characters match name/code prefixes 
 retry message and `Retry-After`. Budget errors suggest checking again in five
 minutes, but exhaustion may last until the rolling 24-hour budget resets.
 
-The target protocol is `2025-11-25`; `2025-06-18`, `2025-03-26` and `2024-11-05` version
-values remain accepted over this POST transport (no legacy SSE endpoint).
-Missing version headers use `2025-03-26` compatibility behaviour; unsupported
-headers return HTTP 400, per the [MCP transport specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
+The target protocol is `2025-11-25`. `initialize` echoes `2025-06-18`,
+`2025-03-26` or `2024-11-05` when a client asks for one and otherwise answers
+`2025-11-25`, over this POST transport (no legacy SSE endpoint). The
+`MCP-Protocol-Version` header is deliberately not enforced: both tools behave
+the same in every version, and a strict check once rejected Claude's connector
+when the specification moved on.
 Send one JSON-RPC message per POST; batches are rejected. Notifications receive
 HTTP 202 with no body and do not execute tools. `GET /mcp` returns HTTP 405.
-Configured origin allow-lists apply to MCP browser requests.
+`/mcp` accepts any origin; `SIGNALBOARDER_ALLOWED_ORIGINS` narrows the REST API only.
 
 ### Fixture mode
 
@@ -260,7 +262,7 @@ agreement. Both copies are derived databases under ODbL, credited to
 | `SIGNALBOARDER_LDBWS_URL` | None | Provider base URL |
 | `SIGNALBOARDER_PROVIDER_TIMEOUT_MS` | 8000 | Provider request timeout |
 | `SIGNALBOARDER_WEB_ROOT` | None | Directory of built static pages |
-| `SIGNALBOARDER_ALLOWED_ORIGINS` | Any | Comma-separated CORS origins |
+| `SIGNALBOARDER_ALLOWED_ORIGINS` | Any | Comma-separated CORS origins for the REST API (`/mcp` allows any) |
 
 The live provider requires both its key and base URL. Clients receive the
 normalised response, never the provider credential.

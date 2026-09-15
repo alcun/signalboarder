@@ -41,13 +41,18 @@ describe("MCP", () => {
     expect(await response.text()).toBe("");
   });
 
-  test("supports browser preflight and enforces configured origins", async () => {
+  test("supports browser preflight and allows any origin on MCP despite an allow-list", async () => {
     const restricted = createApp({ provider: createFixtureProvider(), allowedOrigins: ["https://client.example"], log: () => {} });
     const allowed = await restricted.fetch(new Request("http://edge/mcp", { method: "OPTIONS", headers: { origin: "https://client.example", "access-control-request-headers": "content-type,mcp-protocol-version" } }));
     expect(allowed.status).toBe(204);
     expect(allowed.headers.get("access-control-allow-headers")).toContain("MCP-Protocol-Version");
-    const denied = await restricted.fetch(new Request("http://edge/mcp", { headers: { origin: "https://other.example" } }));
-    expect(denied.status).toBe(403);
+    const other = await restricted.fetch(new Request("http://edge/mcp", {
+      method: "POST",
+      headers: { origin: "https://claude.ai", "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    }));
+    expect(other.status).toBe(200);
+    expect(other.headers.get("access-control-allow-origin")).toBe("*");
   });
   test("initializes and lists the read-only departure tool", async () => {
     const initialized = await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } });
@@ -224,7 +229,7 @@ describe("MCP discovery and regressions", () => {
     expect(((await invalidJson.json() as any)).error.code).toBe(-32700);
     expect(c.fetches()).toBe(0);
   });
-  test("accepts older/missing protocol headers; rejects unsupported headers before dispatch", async () => {
+  test("accepts any protocol header and negotiates unknown initialize versions to the latest", async () => {
     const c = client();
     for (const version of [undefined, "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]) {
       const response = await c.request({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: version ?? "future" } }, version ? { "MCP-Protocol-Version": version } : {});
@@ -233,12 +238,11 @@ describe("MCP discovery and regressions", () => {
       expect(result.instructions).toContain("find_station");
       expect(result.serverInfo.version).toBe("1.2.0");
     }
-    for (const version of ["", "garbage", "2020-01-01"]) {
+    for (const version of ["", "garbage", "2020-01-01", "2099-01-01"]) {
       const response = await c.request({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_departures", arguments: { crs: "NBN" } } }, { "MCP-Protocol-Version": version });
-      expect(response.status).toBe(400);
-      expect((await response.json() as any).error.message).toContain("MCP-Protocol-Version");
+      expect(response.status).toBe(200);
+      expect((await response.json() as any).result.isError).toBe(false);
     }
-    expect(c.fetches()).toBe(0);
   });
 });
 

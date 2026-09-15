@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 
 import { createBoardCache, type BoardResult } from "./cache";
 import { lizard } from "./lizard";
-import { handleMcp, PROTOCOL_VERSIONS } from "./mcp";
+import { handleMcp } from "./mcp";
 import type { Provider, DepartureWindow } from "./providers";
 
 /**
@@ -145,12 +145,11 @@ export function createApp(config: EdgeConfig) {
     c.header("x-request-id", requestId);
 
     // Public read-only data, so any origin may read it and credentials are
-    // never involved. An explicit allow-list narrows it if that ever changes.
+    // never involved. An explicit allow-list narrows the REST API only: /mcp is
+    // keyless and read-only, and MCP clients such as Claude's connectors call
+    // it from origins no operator would think to list.
     const origin = c.req.header("origin");
-    if (c.req.path === "/mcp" && origin && allowedOrigins.length > 0 && !allowedOrigins.includes(origin)) {
-      return c.json({ error: "Origin is not allowed." }, 403);
-    }
-    if (allowedOrigins.length === 0) {
+    if (allowedOrigins.length === 0 || c.req.path === "/mcp") {
       c.header("access-control-allow-origin", "*");
     } else if (origin && allowedOrigins.includes(origin)) {
       c.header("access-control-allow-origin", origin);
@@ -296,16 +295,6 @@ export function createApp(config: EdgeConfig) {
   }
 
   app.get("/v1/departures/:crs", (c) => departures(c, c.req.param("crs"), c.req.query("rows")));
-
-  app.use("/mcp", async (c, next) => {
-    // Missing headers use the 2025-03-26 compatibility behaviour. This
-    // stateless server does not store a negotiated version between requests.
-    const version = c.req.header("MCP-Protocol-Version") ?? "2025-03-26";
-    if (!PROTOCOL_VERSIONS.includes(version)) {
-      return c.json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: `Unsupported MCP-Protocol-Version. Use ${PROTOCOL_VERSIONS.join(", ")}.` } }, 400);
-    }
-    return next();
-  });
 
   app.post("/mcp", async (c) => {
     c.header("cache-control", "no-store");

@@ -8,6 +8,10 @@
   `MCP-Protocol-Version` header, including Claude's custom connectors, were
   rejected with HTTP 400, which Claude reported as a sign-in requirement.
 
+- Stop enforcing `MCP-Protocol-Version` and the origin allow-list on `/mcp`, so
+  a future protocol version or an unlisted client origin no longer breaks
+  connectors. The allow-list still narrows the REST API.
+
 ### Added
 
 - Add optional MCP departure offsets and windows within National Rail’s two-hour
