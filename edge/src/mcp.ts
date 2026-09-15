@@ -1,7 +1,7 @@
 /**
  * Minimal stateless Streamable HTTP MCP handler for the public departure API.
  *
- * The tool deliberately dispatches through the existing HTTP route. That keeps
+ * The tool deliberately uses the existing departure handler. That keeps
  * provider caching, limits and the response contract identical for browsers,
  * devices and agents.
  */
@@ -63,11 +63,15 @@ async function failureText(response: Response): Promise<string> {
   }
 }
 
-async function callTool(id: JsonRpcRequest["id"], args: Record<string, unknown>, dispatch: (path: string) => Promise<Response>): Promise<McpReply> {
+async function callTool(id: JsonRpcRequest["id"], args: Record<string, unknown>, dispatch: (crs: string, rows: number) => Promise<Response>): Promise<McpReply> {
   if (typeof args.crs !== "string" || !args.crs) return toolError(id, "The crs argument is required.");
+  if (!/^[a-z]{3}$/i.test(args.crs)) return toolError(id, "The CRS code must be three letters.");
+  if (args.rows !== undefined && (typeof args.rows !== "number" || !Number.isInteger(args.rows) || args.rows < 1 || args.rows > 10)) {
+    return toolError(id, "The rows argument must be an integer from 1 to 10.");
+  }
+  if (Object.keys(args).some((key) => key !== "crs" && key !== "rows")) return toolError(id, "Only crs and rows arguments are supported.");
 
-  const query = new URLSearchParams({ rows: String(args.rows ?? 2) });
-  const response = await dispatch(`/v1/departures/${encodeURIComponent(args.crs)}?${query}`);
+  const response = await dispatch(args.crs, (args.rows as number | undefined) ?? 2);
   if (!response.ok) return toolError(id, await failureText(response));
 
   const board = await response.json();
@@ -78,15 +82,19 @@ async function callTool(id: JsonRpcRequest["id"], args: Record<string, unknown>,
   });
 }
 
-export async function handleMcp(message: unknown, dispatch: (path: string) => Promise<Response>): Promise<McpReply> {
+export async function handleMcp(message: unknown, dispatch: (crs: string, rows: number) => Promise<Response>): Promise<McpReply> {
   if (!message || Array.isArray(message) || typeof message !== "object") {
     return error(null, -32600, "Invalid request.");
   }
 
   const request = message as JsonRpcRequest;
-  if (!request.method) return error(request.id, -32600, "Method is required.");
+  if (request.jsonrpc !== "2.0" || typeof request.method !== "string" || !request.method ||
+      (request.id !== undefined && typeof request.id !== "string" && typeof request.id !== "number") ||
+      (request.params !== undefined && (!request.params || typeof request.params !== "object" || Array.isArray(request.params)))) {
+    return error(null, -32600, "Invalid request.");
+  }
 
-  if (request.method === "notifications/initialized" || request.method === "notifications/cancelled") {
+  if (request.id === undefined) {
     return { status: 202, body: null };
   }
 

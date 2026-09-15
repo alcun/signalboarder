@@ -9,6 +9,7 @@
  *  - keep the last good board on screen when a refresh fails, marked stale
  */
 
+import { createDepartureQueries, type BoardResponse, type Service } from "./departure-query";
 import {
   foldAll,
   isKnownCrs as isKnownCrsIn,
@@ -16,23 +17,6 @@ import {
   stationName as stationNameIn,
   type Station,
 } from "./stations";
-
-interface Service {
-  scheduled: string;
-  expected: string;
-  destination: string;
-  platform: string;
-  disrupted: boolean;
-}
-
-interface BoardResponse {
-  crs: string;
-  station: string;
-  generatedAt: string;
-  stale: boolean;
-  services: Service[];
-  attribution: string;
-}
 
 /**
  * How many services to show, and how big.
@@ -71,14 +55,11 @@ let view: View = "platform";
  * type size on resize, which is what made it feel unsettled.
  */
 const PLATFORM_ROWS = 3;
-const CONCOURSE_ROWS = 12;
+const CONCOURSE_ROWS = 10;
 
 function wantedRows(): number {
   return view === "platform" ? PLATFORM_ROWS : CONCOURSE_ROWS;
 }
-
-/** How many services the next request asks for. */
-let rows = PLATFORM_ROWS;
 
 const POLL_MS = 30_000;
 const MAX_BACKOFF_MS = 240_000;
@@ -86,6 +67,7 @@ const STORAGE_KEY = "signalboarder:crs";
 
 /** Set in the page head so a tailnet or localhost board can reach a local edge. */
 const API: string = (window as unknown as { SIGNALBOARDER_API?: string }).SIGNALBOARDER_API ?? "";
+const departureQueries = createDepartureQueries(API);
 const INITIAL_CRS: string =
   (window as unknown as { SIGNALBOARDER_INITIAL_CRS?: string }).SIGNALBOARDER_INITIAL_CRS ?? "";
 
@@ -206,6 +188,7 @@ let crs = "";
 let lastGood: BoardResponse | null = null;
 let failures = 0;
 let timer: number | undefined;
+let requestVersion = 0;
 
 /**
  * Error copy. `unknown_crs` reads differently from every other failure on
@@ -283,6 +266,9 @@ function renderClock(): void {
 }
 
 function renderBoard(board: BoardResponse): void {
+  // Switching back from concourse must immediately show only three rows,
+  // including while the next request is still in flight.
+  board = { ...board, services: board.services.slice(0, wantedRows()) };
   el.stationName.textContent = board.station;
   document.title = `${board.station} departures`;
   el.attribution.textContent = board.attribution;
@@ -553,6 +539,7 @@ function schedule(delay: number): void {
 async function refresh(): Promise<void> {
   if (!crs) return;
   if (document.hidden) return; // Resumed by the visibility listener.
+  const version = ++requestVersion;
 
   // Only while there is nothing to show. On a poll the board already holds a
   // full set of departures, and flashing dots over them every thirty seconds
@@ -560,37 +547,27 @@ async function refresh(): Promise<void> {
   if (!lastGood) setLoading(true);
 
   try {
-    const response = await fetch(`${API}/v1/departures/${crs}?rows=${rows}`, {
-      headers: { accept: "application/json" },
-    });
-    const payload = await response.json();
-
-    if (!response.ok) {
-      const code = typeof payload?.code === "string" ? payload.code : "unknown";
-
-      // A station that does not exist is terminal: stop polling, keep the
-      // picker open, and never show the previous station's board underneath.
-      if (code === "unknown_crs" || code === "bad_crs") {
-        lastGood = null;
-        setLoading(false);
-        el.services.replaceChildren();
-        padWithGhosts(0);
-        el.stationName.textContent = "Signalboarder";
-          setStatus(message(code), true);
-        showPicker(true);
-        return;
-      }
-
-      throw new Error(code);
-    }
+    const payload = await departureQueries.fetch(crs);
+    if (version !== requestVersion) return;
 
     failures = 0;
     lastGood = payload as BoardResponse;
     renderBoard(lastGood);
     schedule(POLL_MS);
   } catch (error) {
+    if (version !== requestVersion) return;
     failures += 1;
     const code = error instanceof Error ? error.message : "unknown";
+    setLoading(false);
+    if (code === "unknown_crs" || code === "bad_crs") {
+      lastGood = null;
+      el.services.replaceChildren();
+      padWithGhosts(0);
+      el.stationName.textContent = "Signalboarder";
+      setStatus(message(code), true);
+      showPicker(true);
+      return;
+    }
     const delay = Math.min(POLL_MS * 2 ** (failures - 1), MAX_BACKOFF_MS);
 
     if (lastGood) {
@@ -607,6 +584,7 @@ async function refresh(): Promise<void> {
 }
 
 function setStation(next: string): void {
+  requestVersion += 1;
   crs = next.trim().toUpperCase();
   failures = 0;
   lastGood = null;
@@ -637,6 +615,11 @@ function setStation(next: string): void {
   if (known) el.stationName.textContent = known;
 
   setStatus("Loading");
+  const cached = departureQueries.cached(crs);
+  if (cached) {
+    lastGood = cached;
+    renderBoard(cached);
+  }
   showPicker(false);
   schedule(0);
 }
@@ -784,9 +767,7 @@ el.clock.addEventListener("click", () => {
   history.replaceState(null, "", url);
 
   applyView();
-  rows = wantedRows();
   if (lastGood) renderBoard(lastGood);
-  if (crs) schedule(0);
 });
 
 // Polling stops entirely on a hidden tab and catches up on return, so a board
@@ -800,7 +781,8 @@ document.addEventListener("visibilitychange", () => {
   schedule(0);
 });
 
-// View before first paint, so the board never flashes the wrong shape.
+// Restore the view before rendering departure rows. The grid's control slots
+// have the same dimensions in both views, including before this script runs.
 if (new URLSearchParams(location.search).get("view") === "all") {
   view = "concourse";
 } else {
@@ -817,7 +799,6 @@ window.setInterval(renderClock, 1000);
 
 // Nothing to do on resize or rotation: the type scale is CSS and the row count
 // does not depend on the space. That is the point.
-rows = wantedRows();
 
 const start = initialStation();
 if (start) {

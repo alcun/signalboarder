@@ -23,6 +23,13 @@ ${PAGES.map((page) => `- [${page.h1}](${page.slug ? `${base}/${page.slug}` : bas
 - Live data is powered by National Rail Enquiries. The station list credits Dav Wheat and Trainline EU under the ODbL.
 - Signalboarder stores no journeys or personal data.
 
+## MCP
+
+- Endpoint: https://signalboarder.alcun.dev/mcp (Streamable HTTP, no account or API key).
+- Read-only tool: get_departures. Arguments: crs (three-letter station code), rows (integer 1 to 10, default 2).
+- Returns the same departure model as the board, including stale and National Rail attribution. Shared request limits apply.
+- [Connection instructions](https://github.com/alcun/signalboarder/blob/main/edge/README.md#mcp-setup).
+
 ## Related
 
 - [alcun.dev](${AUTHOR_URL}): the maker.

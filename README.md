@@ -38,6 +38,14 @@ One container serves the website and departure API. There is no database, and
 National Rail credentials stay on the server. See [self-hosting](SELFHOSTING.md)
 for configuration, limits and running behind HTTPS.
 
+## Use with an AI assistant
+
+Connect a remote MCP client to `https://signalboarder.alcun.dev/mcp` using
+Streamable HTTP. No account or API key is needed. Ask for departures using a
+three-letter station code, for example “Show the next five trains from KGX”.
+The read-only `get_departures` tool shares the board's data and service limits.
+See [MCP setup and examples](edge/README.md#mcp-setup).
+
 ## Development
 
 The website is static Astro with a TypeScript client. The API uses Bun and

@@ -75,6 +75,39 @@ share its cache, provider budget and error model. Send JSON-RPC `initialize`,
 `tools/list` and `tools/call` messages; notifications receive `202` with no
 body. `GET /mcp` returns a short `405` explanation.
 
+## MCP setup
+
+Hosted endpoint: `https://signalboarder.alcun.dev/mcp`. Add it as a remote
+Streamable HTTP server in your MCP client. Authentication is not required.
+For a self-hosted instance, use your server origin followed by `/mcp`.
+
+The tool accepts `{"crs":"KGX","rows":5}`. `crs` is a three-letter station
+code, case-insensitive; `rows` is an integer from 1 to 10, default 2. It returns
+the departure JSON documented above as both text and structured content.
+There is no station-search or journey-planning tool. Use the board's station
+picker to look up codes. Respect `stale` and preserve National Rail attribution.
+
+To check the connection without an MCP client:
+
+```sh
+curl https://signalboarder.alcun.dev/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"example","version":"1.0"}}}'
+
+curl https://signalboarder.alcun.dev/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2025-06-18' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_departures","arguments":{"crs":"KGX","rows":5}}}'
+```
+
+No session ID or persistent connection is needed. Each request counts once
+towards the same rate limit as the REST API, and both interfaces share the
+provider cache and budget. Provider errors appear as tool results with
+`isError: true`; an exhausted request limit returns HTTP 429.
+When an origin allow-list is configured, MCP rejects other browser origins.
+
 ## Configuration
 
 | Variable | Default | Purpose |

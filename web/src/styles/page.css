@@ -34,6 +34,8 @@
 }
 
 .about p { margin: 0 0 1.25rem; }
+.mcp pre { overflow-x: auto; padding: 1rem; border: 1px solid var(--ink-dim); font: 0.85rem/1.6 monospace; letter-spacing: 0; }
+.mcp p code { overflow-wrap: anywhere; font-size: 0.9em; }
 
 .make-board {
   margin: clamp(3rem, 8vw, 5rem) 0;

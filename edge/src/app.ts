@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 
 import { createBoardCache, type BoardResult } from "./cache";
 import { lizard } from "./lizard";
@@ -147,6 +147,9 @@ export function createApp(config: EdgeConfig) {
     // Public read-only data, so any origin may read it and credentials are
     // never involved. An explicit allow-list narrows it if that ever changes.
     const origin = c.req.header("origin");
+    if (c.req.path === "/mcp" && origin && allowedOrigins.length > 0 && !allowedOrigins.includes(origin)) {
+      return c.json({ error: "Origin is not allowed." }, 403);
+    }
     if (allowedOrigins.length === 0) {
       c.header("access-control-allow-origin", "*");
     } else if (origin && allowedOrigins.includes(origin)) {
@@ -156,6 +159,7 @@ export function createApp(config: EdgeConfig) {
 
     if (c.req.method === "OPTIONS") {
       c.header("access-control-allow-methods", "GET, POST, OPTIONS");
+      c.header("access-control-allow-headers", "Content-Type, MCP-Protocol-Version");
       c.header("access-control-max-age", "86400");
       return c.body(null, 204);
     }
@@ -196,9 +200,8 @@ export function createApp(config: EdgeConfig) {
     return next();
   });
 
-  app.get("/v1/departures/:crs", async (c) => {
+  async function departures(c: Context, crs: string, rowQuery?: string) {
     const requestId = c.get("requestId");
-    const crs = c.req.param("crs");
 
     // Server-side analytics for this route only, and deliberately NOT on every
     // request. A board polls every 30 to 60 seconds and so does the ESP32, so
@@ -216,7 +219,7 @@ export function createApp(config: EdgeConfig) {
       return fail(c, 400, "bad_crs");
     }
 
-    const requested = Number.parseInt(c.req.query("rows") ?? "2", 10);
+    const requested = Number.parseInt(rowQuery ?? "2", 10);
     const rows = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), maxRows) : 2;
 
     let result: BoardResult;
@@ -286,9 +289,12 @@ export function createApp(config: EdgeConfig) {
       // this only ever collapses an accidental double fetch.
       { "cache-control": "public, max-age=10" },
     );
-  });
+  }
+
+  app.get("/v1/departures/:crs", (c) => departures(c, c.req.param("crs"), c.req.query("rows")));
 
   app.post("/mcp", async (c) => {
+    c.header("cache-control", "no-store");
     let message: unknown;
     try {
       message = await c.req.json();
@@ -296,10 +302,7 @@ export function createApp(config: EdgeConfig) {
       return c.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error: body must be JSON." } }, 200);
     }
 
-    const origin = new URL(c.req.url).origin;
-    const { status, body } = await handleMcp(message, async (path) =>
-      app.fetch(new Request(`${origin}${path}`, { headers: { accept: "application/json" } })),
-    );
+    const { status, body } = await handleMcp(message, async (crs, rows) => departures(c, crs, String(rows)));
     if (body === null) return c.body(null, status as 202);
     return c.json(body as object, status as 200);
   });

@@ -48,6 +48,12 @@ For a production build served alongside the API, follow the root
   particular station; otherwise the browser restores the last selection.
 - Polling stops in a hidden tab and resumes when it becomes visible. Failed
   requests back off to a four-minute maximum.
+- TanStack Query Core caches each station's ten-train response for both views.
+  Data stays fresh for 30 seconds and unused entries expire after five minutes.
+  The cache is memory-only. Returning to a station shows cached data immediately;
+  old data is marked stale while refreshing. View changes do not fetch.
+- Header and clock occupy stable grid slots. Departures scroll within their
+  own region, so loading and view changes do not move the controls.
 - Failed refreshes preserve the last good board, marked stale. An unknown
   station clears the old board and opens the picker.
 - Full screen requests a screen wake lock. Browsers without the Fullscreen API

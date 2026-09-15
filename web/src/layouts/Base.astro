@@ -69,6 +69,8 @@ const jsonLd = {
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="color-scheme" content="dark" />
+    <link rel="preload" href="/fonts/dot-matrix-regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/dot-matrix-bold-tall.woff2" as="font" type="font/woff2" crossorigin />
     <meta name="theme-color" content="#000000" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -169,6 +171,21 @@ const jsonLd = {
           <li><span>03</span><strong>Leave it running</strong><small>Go full screen, or add Signalboarder to your home screen.</small></li>
         </ol>
       </div>
+      <section id="mcp" class="mcp">
+        <h2>Ask for the next train</h2>
+        <p>Connect an AI assistant to Signalboarder with Model Context Protocol (MCP).
+          Ask “What are the next five departures from London King’s Cross (KGX)?”
+          and it can check the same live data as this board. No account or API key needed.</p>
+        <p>Add a remote MCP server in your client, choose Streamable HTTP, and use this URL:</p>
+        <pre><code>https://signalboarder.alcun.dev/mcp</code></pre>
+        <p>The read-only <code>get_departures</code> tool takes a three-letter station code
+          (<code>crs</code>) and an optional <code>rows</code> count from 1 to 10 (default 2).</p>
+        <pre><code>{JSON.stringify({ crs: "KGX", rows: 5 }, null, 2)}</code></pre>
+        <p>Results include destinations, scheduled and expected times, platforms and calling points
+          where available. The shared service has request limits; a <code>stale</code> result
+          means cached departures were returned while live data was unavailable.</p>
+        <p><a href="https://github.com/alcun/signalboarder/blob/main/edge/README.md#mcp-setup">MCP setup and API examples</a></p>
+      </section>
       <h2>Common questions</h2>
       <dl class="faq">{faq.map(([question, answer]) => <><dt>{question}</dt><dd>{answer}</dd></>)}</dl>
       <nav class="other" aria-label="Signalboarder pages">

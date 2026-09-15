@@ -78,7 +78,7 @@ const resolvedWebRoot = webRoot ? resolve(webRoot) : null;
 
 async function fetch(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  if (!resolvedWebRoot || url.pathname === "/healthz" || url.pathname.startsWith("/v1/")) {
+  if (!resolvedWebRoot || url.pathname === "/healthz" || url.pathname === "/mcp" || url.pathname.startsWith("/v1/")) {
     return app.fetch(request);
   }
 
@@ -95,7 +95,7 @@ async function fetch(request: Request): Promise<Response> {
 const server = Bun.serve({
   port,
   fetch,
-  // Nothing here accepts a body. A request that sends one is already wrong.
+  // MCP accepts small JSON-RPC messages, never uploads.
   maxRequestBodySize: 4096,
 });
 

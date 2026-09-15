@@ -69,6 +69,7 @@
    */
   --row: clamp(1rem, min(3.2vw, 6.4vh), 3.25rem);
   --head: calc(var(--row) * 0.72);
+  --clock-height: calc(var(--row) * 2.4);
   --face: "Dot Matrix", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --face-bold: "Dot Matrix Bold", var(--face);
   /* One cell per digit. Wide enough for the widest glyph in each face, measured
@@ -110,6 +111,7 @@ html {
    * every scroll event, which is the one thing this page cannot afford. */
   scrollbar-color: var(--ink-dim) var(--ground);
   scrollbar-width: thin;
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -141,18 +143,15 @@ body {
 
 .board {
   /* One screen, minus this element's own vertical padding. */
-  min-height: calc(100svh - var(--gap) * 2);
+  height: calc(100svh - max(var(--gap), env(safe-area-inset-top)) - max(var(--gap), env(safe-area-inset-bottom)));
   flex: none;
   /* A grid child with nowrap text overflows its track rather than shrinking,
    * and without this the right-hand columns bleed out past the left edge. */
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) var(--clock-height) 2.8em;
   gap: var(--gap);
-  /* The platform board is one tight object, so it is centred in the viewport
-   * like a sign hanging in space rather than pinned to the top with a void
-   * beneath it. The concourse view overrides this and fills instead. */
-  justify-content: center;
+  /* Header and clock keep their slots while the departure region changes. */
   container-type: inline-size;
   /* Containing block for the picker, which is taken out of flow below. */
   position: relative;
@@ -166,16 +165,9 @@ body {
 .board--all {
   --row: clamp(0.85rem, min(2vw, 3.1vh), 1.6rem);
 }
-.board--all {
-  justify-content: flex-start;
-}
 
 body:has(.board--all) {
   overscroll-behavior-y: contain;
-}
-
-.board--all .board__services {
-  flex: 1;
 }
 
 /*
@@ -201,6 +193,8 @@ body:has(.board--all) {
   gap: var(--gap);
   border-bottom: 1px solid var(--ink-dim);
   padding-bottom: calc(var(--gap) / 2);
+  min-height: calc(var(--head) * 2.8);
+  line-height: 1.3;
 }
 
 .board__date {
@@ -262,6 +256,9 @@ body:has(.board--all) {
   letter-spacing: inherit;
   text-transform: inherit;
   text-align: left;
+  max-width: 58vw;
+  min-height: 2.6em;
+  align-items: center;
   cursor: pointer;
 }
 
@@ -474,6 +471,7 @@ body:has(.board--all) {
   font-family: var(--face-tall);
   font-size: calc(var(--row) * 1.7);
   line-height: 1.1;
+  align-self: stretch;
 }
 
 .clock:focus-visible {
@@ -516,6 +514,8 @@ body:has(.board--all) {
   min-height: 1.4em;
   font-size: max(0.7rem, calc(var(--row) * 0.4));
   color: var(--ink-dim);
+  overflow: auto;
+  line-height: 1.4;
 }
 
 .board__alert--bad {
@@ -540,14 +540,7 @@ body:has(.board--all) {
  * THE PICKER IS OUT OF FLOW, and that is a layout-shift fix rather than a
  * styling choice.
  *
- * `.board` is `justify-content: center`, so it hangs in the middle of the
- * viewport like a sign in space. The cost of centring is that ANY change in
- * content height moves every element on the screen, not just the part that
- * changed. The picker toggling open used to add its own height plus up to 42vh
- * of results, which threw the clock and the departures around the moment you
- * went to change station.
- *
- * As an overlay it costs the board nothing: opening the search, typing, and
+ * As an overlay it costs the grid nothing: opening the search, typing, and
  * the results list growing and shrinking all leave the board exactly where it
  * was. It is anchored under the header, which is also where the control that
  * opens it lives.
@@ -689,9 +682,8 @@ body:has(.board--all) {
 /*
  * THE SERVICES BLOCK HOLDS ITS HEIGHT.
  *
- * `.board` is centred, so a block that grows from nothing to three rows moves
- * every element on the screen - the clock, the alert, the lot. Empty, loading
- * and populated therefore all occupy the same height: the script pads the list
+ * The platform list is centred within the departure region. Empty, loading
+ * and populated lists occupy the same height: the script pads the list
  * with ghost rows up to the row count for the current view, and the first row
  * in platform view always carries its calling slot even when there is no route
  * to show.
@@ -724,7 +716,13 @@ body:has(.board--all) {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  justify-content: safe center;
 }
+
+.board--all .board__rows { justify-content: flex-start; }
+.board__services { flex: none; }
 
 .loading {
   position: absolute;

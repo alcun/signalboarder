@@ -13,6 +13,7 @@
     "stations": "node scripts/build-stations.mjs data/stations.csv public/stations.json"
   },
   "dependencies": {
+    "@tanstack/query-core": "^5.102.8",
     "astro": "^7.1.1"
   }
 }

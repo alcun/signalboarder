@@ -4,6 +4,12 @@
 
 ### Added
 
+- Cache departure boards in the browser with TanStack Query, sharing one
+  ten-train response across both views and restoring recent stations immediately.
+
+- Add public MCP connection instructions, sample arguments and API examples
+  to the website and READMEs.
+
 - Add a stateless read-only MCP endpoint at `/mcp` with a `get_departures` tool
   for agents that need the same normalized station data as the board.
 
@@ -14,6 +20,14 @@
 - Add a railway animation to the README and refresh installation instructions.
 
 ### Fixed
+
+- Keep the board header and clock in fixed slots during loading and view
+  changes; show only three trains immediately when returning to platform view.
+
+- Route MCP requests correctly when serving the bundled website, count each
+  call once against its client's rate limit, and allow browser MCP headers.
+- Validate MCP requests and tool arguments, reject disallowed browser origins,
+  and acknowledge notifications without executing tools.
 
 - Count simultaneous requests sharing a provider fetch as one budget slot.
 - Pass selected server origins into the macOS setup website build.
