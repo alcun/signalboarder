@@ -189,7 +189,7 @@ export function createApp(config: EdgeConfig) {
   app.get("/health", (c) => send(c, 200, { status: "ok", service: "signalboarder", version: pkg.version }, { "cache-control": "no-store" }));
 
   app.use("*", async (c, next) => {
-    if (c.req.path === "/healthz") return next();
+    if (c.req.path === "/healthz" || c.req.path === "/health") return next();
     const address = c.get("clientAddress");
     const { allowed, retryAfterSeconds } = takeToken(address);
     if (!allowed) {

@@ -133,7 +133,7 @@ describe("routes", () => {
     expect(response.headers.get("access-control-allow-credentials")).toBeNull();
   });
 
-  test("rate limiting bites, and never on healthz", async () => {
+  test("rate limiting bites, and never on health checks", async () => {
     const app = createApp({ provider: createFixtureProvider(), rateLimit: 2, log: silent });
 
     expect((await get(app, "/v1/departures/NBN")).status).toBe(200);
@@ -145,6 +145,7 @@ describe("routes", () => {
 
     // The orchestrator must never be locked out of the liveness probe.
     expect((await get(app, "/healthz")).status).toBe(200);
+    expect((await get(app, "/health")).status).toBe(200);
   });
 });
 

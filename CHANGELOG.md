@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.2] - 2026-09-15
+
+### Fixed
+
+- `GET /health` returned 404 from the container image, where only listed paths
+  reach the API and everything else is served as a static file. It is listed
+  now, and a test fails when an API route is missing from that list.
+
 ## [1.2.1] - 2026-09-15
 
 ### Added

@@ -76,9 +76,13 @@ const app = createApp({
 const webRoot = process.env.SIGNALBOARDER_WEB_ROOT;
 const resolvedWebRoot = webRoot ? resolve(webRoot) : null;
 
+// Paths the API answers; everything else is the static board. A route added to
+// app.ts outside /v1/ must be listed here too, which test/routes.test.ts checks.
+const APP_PATHS = new Set(["/health", "/healthz", "/mcp"]);
+
 async function fetch(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  if (!resolvedWebRoot || url.pathname === "/healthz" || url.pathname === "/mcp" || url.pathname.startsWith("/v1/")) {
+  if (!resolvedWebRoot || APP_PATHS.has(url.pathname) || url.pathname.startsWith("/v1/")) {
     return app.fetch(request);
   }
 
