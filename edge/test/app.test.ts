@@ -1,3 +1,4 @@
+import pkg from "../package.json";
 import { describe, expect, test } from "bun:test";
 
 import { createApp } from "../src/app";
@@ -40,6 +41,17 @@ describe("routes", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
+    expect(provider.calls).toBe(0);
+  });
+
+  test("health reports status, service and version and touches no provider", async () => {
+    const provider = stubProvider([]);
+    const app = createApp({ provider, log: silent });
+
+    const response = await get(app, "/health");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "ok", service: "signalboarder", version: pkg.version });
     expect(provider.calls).toBe(0);
   });
 

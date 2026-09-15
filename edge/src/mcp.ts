@@ -1,4 +1,5 @@
 /** Stateless Streamable HTTP; departures always use the shared route. */
+import pkg from "../package.json";
 import type { Board } from "./departures";
 import type { DepartureWindow } from "./providers";
 import { findStations, stationHint, stationByCrs } from "./stations";
@@ -165,7 +166,7 @@ export async function handleMcp(message: unknown, dispatch: Dispatch, fixture = 
     const protocolVersion = typeof requested === "string" && PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0];
     return reply(request.id, {
       protocolVersion, capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: "signalboarder", title: "Signalboarder", version: "1.2.0" },
+      serverInfo: { name: "signalboarder", title: "Signalboarder", version: pkg.version },
       instructions: "Use find_station to turn a station name into a CRS code, then get_departures for the next 1–10 trains (default 2). Resolve ambiguous station names with the user. Both tools share the request limit; station search uses no provider budget and each departure call makes at most one provider fetch. Preserve National Rail attribution, explain stale results, and treat times as Europe/London. generatedAt is response time, not data age. Respect Retry-After on HTTP 429. For later departures use time_offset and optional time_window, whose sum must be at most 120 minutes. There is no support beyond the next two hours, arrivals or journey planning. Future status may change.",
     });
   }

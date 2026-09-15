@@ -1,3 +1,4 @@
+import pkg from "../package.json";
 import { describe, expect, test } from "bun:test";
 import { createApp } from "../src/app";
 import { createFixtureProvider } from "../src/providers";
@@ -236,7 +237,7 @@ describe("MCP discovery and regressions", () => {
       const result = (await response.json() as any).result;
       expect(result.protocolVersion).toBe(version ?? "2025-11-25");
       expect(result.instructions).toContain("find_station");
-      expect(result.serverInfo.version).toBe("1.2.0");
+      expect(result.serverInfo.version).toBe(pkg.version);
     }
     for (const version of ["", "garbage", "2020-01-01", "2099-01-01"]) {
       const response = await c.request({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_departures", arguments: { crs: "NBN" } } }, { "MCP-Protocol-Version": version });

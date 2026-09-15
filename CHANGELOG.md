@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased
+## [1.2.1] - 2026-09-15
+
+### Added
+
+- `GET /health` returns `status`, `service` and `version`. `/healthz` keeps its
+  exact `{ "ok": true }` body.
+
+### Changed
+
+- The MCP server reports the version from `edge/package.json` instead of a
+  separate hardcoded number, and a test fails when the changelog does not open
+  with that version.
+
+- The container runs Bun 1 on Alpine with tini as PID 1, so orphaned child
+  processes are reaped.
 
 ### Fixed
 

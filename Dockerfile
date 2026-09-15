@@ -15,12 +15,12 @@ ENV PUBLIC_SIGNALBOARDER_API=$PUBLIC_SIGNALBOARDER_API
 ENV PUBLIC_LIZARD_KEY=$PUBLIC_LIZARD_KEY
 RUN npm run build
 
-FROM oven/bun:1.3.14-slim AS deps
+FROM oven/bun:1-alpine AS deps
 WORKDIR /app/edge
 COPY edge/package.json edge/bun.lock ./
 RUN bun install --frozen-lockfile --production
 
-FROM oven/bun:1.3.14-slim AS runtime
+FROM oven/bun:1-alpine AS runtime
 WORKDIR /app
 COPY --from=deps /app/edge/node_modules ./edge/node_modules
 COPY edge/package.json ./edge/
@@ -29,7 +29,10 @@ COPY --from=web /app/web/dist ./web
 ENV PORT=3000
 ENV SIGNALBOARDER_WEB_ROOT=/app/web
 EXPOSE 3000
+# tini as PID 1 reaps orphaned child processes.
+RUN apk add --no-cache tini
 USER bun
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD bun -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["bun", "run", "edge/src/index.ts"]

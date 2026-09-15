@@ -1,3 +1,4 @@
+import pkg from "../package.json";
 import { Hono, type Context } from "hono";
 
 import { createBoardCache, type BoardResult } from "./cache";
@@ -183,6 +184,9 @@ export function createApp(config: EdgeConfig) {
    * fixes nothing.
    */
   app.get("/healthz", (c) => send(c, 200, { ok: true }, { "cache-control": "no-store" }));
+  // The same check with status, service and version. /healthz keeps its exact
+  // body because container health checks and existing monitors read it.
+  app.get("/health", (c) => send(c, 200, { status: "ok", service: "signalboarder", version: pkg.version }, { "cache-control": "no-store" }));
 
   app.use("*", async (c, next) => {
     if (c.req.path === "/healthz") return next();

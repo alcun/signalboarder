@@ -62,6 +62,11 @@ Errors use `{"ok":false,"code":"..."}`:
 | 502 | `provider_unavailable` | Provider request or response failed |
 | 503 | `provider_budget` | Local upstream budget exhausted |
 
+### `GET /health`
+
+Returns `{"status": "ok", "service": "signalboarder", "version": "…"}`, with the
+version from `edge/package.json`. It never calls the provider.
+
 ### `GET /healthz`
 
 Returns `{"ok":true}` without contacting the provider. Exempt from rate limits.
