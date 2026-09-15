@@ -66,6 +66,15 @@ Errors use `{"ok":false,"code":"..."}`:
 
 Returns `{"ok":true}` without contacting the provider. Exempt from rate limits.
 
+### `POST /mcp`
+
+Stateless Streamable HTTP MCP endpoint. It exposes one read-only tool,
+`get_departures`, with required `crs` and optional `rows` arguments. Tool calls
+run through the same departure route as browser and device requests, so they
+share its cache, provider budget and error model. Send JSON-RPC `initialize`,
+`tools/list` and `tools/call` messages; notifications receive `202` with no
+body. `GET /mcp` returns a short `405` explanation.
+
 ## Configuration
 
 | Variable | Default | Purpose |

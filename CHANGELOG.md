@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- Add a stateless read-only MCP endpoint at `/mcp` with a `get_departures` tool
+  for agents that need the same normalized station data as the board.
+
 ### Changed
 
 - Simplify repository documentation to setup, API and development information.

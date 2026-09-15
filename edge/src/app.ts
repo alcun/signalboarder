@@ -2,6 +2,7 @@ import { Hono } from "hono";
 
 import { createBoardCache, type BoardResult } from "./cache";
 import { lizard } from "./lizard";
+import { handleMcp } from "./mcp";
 import type { Provider } from "./providers";
 
 /**
@@ -154,7 +155,7 @@ export function createApp(config: EdgeConfig) {
     }
 
     if (c.req.method === "OPTIONS") {
-      c.header("access-control-allow-methods", "GET, OPTIONS");
+      c.header("access-control-allow-methods", "GET, POST, OPTIONS");
       c.header("access-control-max-age", "86400");
       return c.body(null, 204);
     }
@@ -286,6 +287,29 @@ export function createApp(config: EdgeConfig) {
       { "cache-control": "public, max-age=10" },
     );
   });
+
+  app.post("/mcp", async (c) => {
+    let message: unknown;
+    try {
+      message = await c.req.json();
+    } catch {
+      return c.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error: body must be JSON." } }, 200);
+    }
+
+    const origin = new URL(c.req.url).origin;
+    const { status, body } = await handleMcp(message, async (path) =>
+      app.fetch(new Request(`${origin}${path}`, { headers: { accept: "application/json" } })),
+    );
+    if (body === null) return c.body(null, status as 202);
+    return c.json(body as object, status as 200);
+  });
+
+  app.get("/mcp", (c) =>
+    c.json({
+      error: "This MCP endpoint is stateless and accepts JSON-RPC over POST.",
+      hint: "POST an initialize request, then use tools/list and tools/call.",
+    }, 405, { Allow: "POST, OPTIONS" }),
+  );
 
   app.notFound((c) => fail(c, 404, "not_found"));
 
