@@ -21,6 +21,9 @@
 
 ### Fixed
 
+- Restore the compact, centred platform board after the layout-stability pass
+  spread its header, departures and clock across the entire screen.
+
 - Keep the board header and clock in fixed slots during loading and view
   changes; show only three trains immediately when returning to platform view.
 

@@ -52,8 +52,10 @@ For a production build served alongside the API, follow the root
   Data stays fresh for 30 seconds and unused entries expire after five minutes.
   The cache is memory-only. Returning to a station shows cached data immediately;
   old data is marked stale while refreshing. View changes do not fetch.
-- Header and clock occupy stable grid slots. Departures scroll within their
-  own region, so loading and view changes do not move the controls.
+- The platform board centres its header, departures and clock as one compact
+  group. The concourse list starts at the top and scrolls within its departure
+  region. Cached data makes view changes immediate, without a second layout
+  change when another response arrives.
 - Failed refreshes preserve the last good board, marked stale. An unknown
   station clears the old board and opens the picker.
 - Full screen requests a screen wake lock. Browsers without the Fullscreen API

@@ -148,10 +148,12 @@ body {
   /* A grid child with nowrap text overflows its track rather than shrinking,
    * and without this the right-hand columns bleed out past the left edge. */
   overflow: hidden;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) var(--clock-height) 2.8em;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   gap: var(--gap);
-  /* Header and clock keep their slots while the departure region changes. */
+  /* Keep the sign together: spare viewport space belongs outside the group,
+   * never between its header, departures and clock. */
   container-type: inline-size;
   /* Containing block for the picker, which is taken out of flow below. */
   position: relative;
@@ -164,6 +166,7 @@ body {
  */
 .board--all {
   --row: clamp(0.85rem, min(2vw, 3.1vh), 1.6rem);
+  justify-content: flex-start;
 }
 
 body:has(.board--all) {
@@ -187,6 +190,7 @@ body:has(.board--all) {
  * With `auto` in the middle the name drifts whenever either side changes width.
  */
 .board__head {
+  flex: none;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: baseline;
@@ -510,6 +514,7 @@ body:has(.board--all) {
  * the credits, off the screen the board occupies.
  */
 .board__alert {
+  flex: none;
   margin: 0;
   min-height: 1.4em;
   font-size: max(0.7rem, calc(var(--row) * 0.4));
@@ -712,13 +717,14 @@ body:has(.board--all) {
 /* The wrapper is the positioning context, and it must not introduce a height
    of its own beyond the list it holds. */
 .board__rows {
+  flex: 0 1 auto;
   position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  justify-content: safe center;
+  justify-content: flex-start;
 }
 
 .board--all .board__rows { justify-content: flex-start; }
