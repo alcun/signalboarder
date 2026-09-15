@@ -11,13 +11,20 @@ function normalise(value: string): string {
 // Loaded once from the checked-in dataset; no web root or provider required.
 const stations = data.map(([name, crs]) => ({ name: name!, crs: crs!, search: normalise(name!) }));
 
+export function stationByCrs(crs: string): Station | undefined {
+  const station = stations.find((station) => station.crs === crs.toUpperCase());
+  return station ? { name: station.name, crs: station.crs } : undefined;
+}
+
 export function findStations(query: string, limit = 5): Station[] {
   const search = normalise(query);
   if (!search) return [];
+  const short = search.replace(/ /g, "").length < 3;
   return stations.map((station) => {
     const rank = station.crs.toLowerCase() === search.replace(/ /g, "") ? 0
       : station.search === search ? 1
       : station.search.startsWith(search) ? 2
+      : short ? (station.crs.toLowerCase().startsWith(search.replace(/ /g, "")) ? 2 : 5)
       : station.search.includes(` ${search}`) ? 3
       : station.search.includes(search) ? 4 : 5;
     return { station, rank };
@@ -27,7 +34,7 @@ export function findStations(query: string, limit = 5): Station[] {
 }
 
 export function stationHint(query: string): string {
-  let matches = findStations(query, 3);
+  let matches = findStations(query, 20).filter(({ crs }) => crs !== query.toUpperCase()).slice(0, 3);
   // A single mistyped letter is useful evidence; do not suggest arbitrary codes.
   if (!matches.length && /^[a-z]{3}$/i.test(query)) {
     const code = query.toUpperCase();

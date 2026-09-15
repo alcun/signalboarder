@@ -166,10 +166,6 @@ export function createApp(config: EdgeConfig) {
 
     await next();
 
-    // MCP discovery/search has no provider cost. Departure analytics are
-    // emitted by departures() for real fetches and failures only.
-    if (c.req.path === "/mcp") return;
-
     log({
       event: "request",
       request_id: requestId,
@@ -319,7 +315,7 @@ export function createApp(config: EdgeConfig) {
       return c.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error: body must be JSON." } }, 200);
     }
 
-    const { status, body } = await handleMcp(message, async (crs, rows) => departures(c, crs, String(rows)));
+    const { status, body } = await handleMcp(message, async (crs, rows) => departures(c, crs, String(rows)), config.provider.name === "fixture");
     if (body === null) return c.body(null, status as 202);
     return c.json(body as object, status as 200);
   });

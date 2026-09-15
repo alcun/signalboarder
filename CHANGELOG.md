@@ -29,8 +29,14 @@
 
 ### Fixed
 
-- Reject unsupported MCP protocol headers and omit per-request MCP access logs
-  so local station search produces no per-call logging.
+- Report known stations without provider boards as unavailable, without suggesting
+  the rejected code again; explain fixture mode and its three demo boards.
+- Restrict short MCP station queries to name/code prefixes and restore `/mcp`
+  operational access logs while keeping station search out of analytics.
+- Add client-specific MCP setup for Claude Code, Claude Desktop/claude.ai, Cursor
+  and VS Code, and link the website MCP section to `llms.txt`.
+
+- Reject unsupported MCP protocol headers.
 
 - Restore the compact, centred platform board after the layout-stability pass
   spread its header, departures and clock across the entire screen.

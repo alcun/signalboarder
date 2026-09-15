@@ -76,6 +76,71 @@ session ID or persistent connection is needed.
 Add `https://signalboarder.alcun.dev/mcp` as a remote Streamable HTTP server
 in your MCP client. For self-hosting, use your server origin plus `/mcp`.
 
+### Claude Code
+
+Run this in the project where you use Claude Code, then start Claude and check `/mcp`:
+
+```sh
+claude mcp add --transport http signalboarder https://signalboarder.alcun.dev/mcp
+```
+
+[Claude Code instructions](https://code.claude.com/docs/en/mcp).
+
+### Claude Desktop / claude.ai
+
+Open **Customize → Connectors → + → Add custom connector**. Name it
+Signalboarder, paste `https://signalboarder.alcun.dev/mcp`, and click **Add**.
+Leave OAuth fields empty. Enable it from **+ → Connectors** in the chat.
+For Team/Enterprise, an owner first adds it under **Organization settings →
+Connectors → Add → Custom → Web**.
+
+These hosted connectors connect from Anthropic's servers, even in Desktop:
+they cannot reach your `localhost`. Use a publicly reachable HTTPS address.
+[Claude connector instructions](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
+
+### Cursor
+
+Merge this into your project's `.cursor/mcp.json` (or `~/.cursor/mcp.json`
+for all projects). Enable Signalboarder under Customize and allow its tools
+when prompted in Agent chat.
+
+```json
+{
+  "mcpServers": {
+    "signalboarder": { "url": "https://signalboarder.alcun.dev/mcp" }
+  }
+}
+```
+
+[Cursor instructions](https://cursor.com/docs/mcp).
+
+### VS Code (GitHub Copilot)
+
+Merge this into `.vscode/mcp.json`. Use **MCP: List Servers** from the Command
+Palette to start Signalboarder and accept the trust prompt, then select its
+tools in Agent chat. **MCP: Add Server** also provides a guided setup.
+
+```json
+{
+  "servers": {
+    "signalboarder": {
+      "type": "http",
+      "url": "https://signalboarder.alcun.dev/mcp"
+    }
+  }
+}
+```
+
+[VS Code instructions](https://code.visualstudio.com/docs/agent-customization/mcp-servers).
+
+Client instructions checked against official documentation on 15 September 2026.
+Claude Code's HTTP connection was tested locally with fixtures. Desktop/claude.ai,
+Cursor and VS Code UI setup has not been tested hands-on. Locally running CLI/IDE
+clients can use `http://127.0.0.1:3000/mcp` when the edge runs on the same machine;
+cloud-hosted clients need an address reachable from their host.
+
+### Tools
+
 Try: **“What are the next five trains from King's Cross?”**
 
 | Tool | Arguments | Result |
@@ -119,12 +184,15 @@ curl https://signalboarder.alcun.dev/mcp \
 ### Limits and protocol
 
 Each MCP request counts once against the REST API's request limit. Station
-search spends no provider budget and emits no per-search analytics. Departures
+search spends no provider budget and emits no per-search analytics. Standard
+stdout `request` access logs remain enabled for `/mcp`. Departures
 use the existing route, cache and daily budget: at most one provider fetch per
 call. There are no arrivals, time-window or journey-planning tools.
 
 Tool failures return `isError: true` with recovery advice; invalid/unknown codes
-include up to three station suggestions where possible. HTTP 429 includes a
+include up to three station suggestions where possible. A known station rejected
+by the provider is reported as temporarily unavailable, without suggesting the
+same code again. Queries shorter than three characters match name/code prefixes only. HTTP 429 includes a
 retry message and `Retry-After`. Budget errors suggest checking again in five
 minutes, but exhaustion may last until the rolling 24-hour budget resets.
 
@@ -135,6 +203,14 @@ headers return HTTP 400, per the [MCP transport specification](https://modelcont
 Send one JSON-RPC message per POST; batches are rejected. Notifications receive
 HTTP 202 with no body and do not execute tools. `GET /mcp` returns HTTP 405.
 Configured origin allow-lists apply to MCP browser requests.
+
+### Fixture mode
+
+With `SIGNALBOARDER_PROVIDER=fixture`, `find_station` searches the full station
+list, but `get_departures` has demo boards only for `NBN` (New Brighton), `GNW`
+(Greenwich) and `ZZZ` (an empty synthetic board). Other codes return an error
+that explains fixture mode; retrying them cannot obtain live data. Switch to
+`ldbws` with your provider credentials for live departures.
 
 ### Bundled station data
 

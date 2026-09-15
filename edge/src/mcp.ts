@@ -1,6 +1,6 @@
 /** Stateless Streamable HTTP; departures always use the shared route. */
 import type { Board } from "./departures";
-import { findStations, stationHint } from "./stations";
+import { findStations, stationHint, stationByCrs } from "./stations";
 
 export const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
@@ -53,7 +53,7 @@ const departureTool = {
 const stationTool = {
   name: "find_station",
   title: "Find a UK railway station",
-  description: "Resolve a station name, partial name or CRS code before calling get_departures. Exact CRS, exact name, name prefix, word prefix, then substring matches. Case and punctuation are ignored. Choose the intended station from ambiguous results; ask the user if needed. Searches a bundled list with no live provider call. Station data: Dav Wheat and Trainline EU, ODbL.",
+  description: "Resolve a station name, partial name or CRS code before calling get_departures. Exact CRS, exact name, name prefix, word prefix, then substring matches. Case and punctuation are ignored. Queries under three characters match only name or CRS prefixes. Choose the intended station from ambiguous results; ask the user if needed. Searches a bundled list with no live provider call. Station data: Dav Wheat and Trainline EU, ODbL.",
   inputSchema: {
     type: "object",
     properties: { query: { type: "string", description: "Station name or code, e.g. King's Cross, St Pancras or NBN." }, limit: { type: "integer", minimum: 1, maximum: 20, default: 5 } },
@@ -85,13 +85,21 @@ function success(id: JsonRpcRequest["id"], structuredContent: unknown, text: str
   return reply(id, { content: [{ type: "text", text }], structuredContent, isError: false });
 }
 
-async function failureText(response: Response, crs: string): Promise<string> {
+async function failureText(response: Response, crs: string, fixture: boolean): Promise<string> {
   try {
     const body = (await response.json()) as { code?: string };
+    if (body.code === "unknown_crs") {
+      const station = stationByCrs(crs);
+      const message = station
+        ? `${station.name} (${station.crs}) is a known station, but no departure board is available for it right now.`
+        : `No station was found for ${crs}. ${stationHint(crs)}`;
+      return message + (fixture
+        ? " This server is in fixture mode: only NBN, GNW and ZZZ have demo boards. Station search still covers all stations. Retrying this code will not produce a board in fixture mode."
+        : "");
+    }
     const retry = response.headers.get("retry-after");
     const messages: Record<string, string> = {
       bad_crs: `The CRS code must be three letters. ${stationHint(crs)}`,
-      unknown_crs: `No station was found for ${crs}. ${stationHint(crs)}`,
       rate_limited: `Request limit reached. Retry in ${retry ?? "3600"} seconds.`,
       provider_budget: `The daily departure provider budget is exhausted. Retry in about ${retry ?? "300"} seconds; the budget may remain exhausted until its rolling 24-hour reset.`,
       provider_unavailable: "The departure provider is temporarily unavailable. Try again in about a minute.",
@@ -115,7 +123,7 @@ function boardText(board: DepartureResult): string {
   ].join("\n");
 }
 
-async function callTool(id: JsonRpcRequest["id"], name: string, args: Record<string, unknown>, dispatch: Dispatch): Promise<McpReply> {
+async function callTool(id: JsonRpcRequest["id"], name: string, args: Record<string, unknown>, dispatch: Dispatch, fixture: boolean): Promise<McpReply> {
   if (name === stationTool.name) {
     if (typeof args.query !== "string") return toolError(id, "The query argument must be a string: a station name or CRS code.");
     if (args.limit !== undefined && (typeof args.limit !== "number" || !Number.isInteger(args.limit) || args.limit < 1 || args.limit > 20)) return toolError(id, "The limit argument must be an integer from 1 to 20.");
@@ -130,12 +138,12 @@ async function callTool(id: JsonRpcRequest["id"], name: string, args: Record<str
   if (args.rows !== undefined && (typeof args.rows !== "number" || !Number.isInteger(args.rows) || args.rows < 1 || args.rows > 10)) return toolError(id, "The rows argument must be an integer from 1 to 10.");
   if (Object.keys(args).some((key) => key !== "crs" && key !== "rows")) return toolError(id, "Only crs and rows arguments are supported.");
   const response = await dispatch(args.crs, (args.rows as number | undefined) ?? 2);
-  if (!response.ok) return toolError(id, await failureText(response, args.crs));
+  if (!response.ok) return toolError(id, await failureText(response, args.crs, fixture));
   const board = await response.json() as DepartureResult;
   return success(id, board, boardText(board));
 }
 
-export async function handleMcp(message: unknown, dispatch: Dispatch): Promise<McpReply> {
+export async function handleMcp(message: unknown, dispatch: Dispatch, fixture = false): Promise<McpReply> {
   if (!message || Array.isArray(message) || typeof message !== "object") return error(null, -32600, "Invalid request. Send one JSON-RPC message, not a batch.");
   const request = message as JsonRpcRequest;
   if (request.jsonrpc !== "2.0" || typeof request.method !== "string" || !request.method ||
@@ -158,7 +166,7 @@ export async function handleMcp(message: unknown, dispatch: Dispatch): Promise<M
     if (params.name !== departureTool.name && params.name !== stationTool.name) return error(request.id, -32602, `Unknown tool: ${String(params.name ?? "")}`);
     const args = params.arguments;
     if (!args || typeof args !== "object" || Array.isArray(args)) return toolError(request.id, "Tool arguments must be an object.");
-    return callTool(request.id, params.name, args as Record<string, unknown>, dispatch);
+    return callTool(request.id, params.name, args as Record<string, unknown>, dispatch, fixture);
   }
   return error(request.id, -32601, `Unknown method: ${request.method}`);
 }

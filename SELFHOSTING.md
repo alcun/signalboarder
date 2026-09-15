@@ -23,7 +23,10 @@ cd signalboarder
 | **Fixtures** | Nothing | No key; works offline after installation |
 
 Open <http://localhost:3000>. Demo stations are `NBN` and `GNW`. The API also accepts `ZZZ` for an empty
-board; this synthetic station is not in the browser picker.
+board; this synthetic station is not in the browser picker. In fixture mode,
+MCP station search still covers the full station list, but departure boards
+exist only for `NBN`, `GNW` and `ZZZ`. Other codes return an explicit fixture-mode
+error. Use your own key for live data. See [MCP client setup](edge/README.md#mcp-setup).
 
 Run `./setup` again to change the configuration. It writes `.env` at mode 0600 and
 starts the image.

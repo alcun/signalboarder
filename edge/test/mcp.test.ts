@@ -118,7 +118,7 @@ describe("MCP discovery and regressions", () => {
   test("bundled dataset matches the website byte for byte", async () => {
     expect(await Bun.file(new URL("../src/stations.json", import.meta.url)).text()).toBe(await Bun.file(new URL("../../web/public/stations.json", import.meta.url)).text());
   });
-  test("search handles names, punctuation, CRS and ranking without fetching or logging", async () => {
+  test("search handles names, punctuation, CRS and ranking without provider fetches; access logging stays enabled", async () => {
     const c = client();
     for (const query of ["kgx", "K.G.X.", "Kings Cross", "King’s Cross", "London King's Cross"]) {
       expect((await c.call("find_station", { query })).structuredContent.stations[0].crs).toBe("KGX");
@@ -130,7 +130,8 @@ describe("MCP discovery and regressions", () => {
     expect(stations[0].name.toLowerCase().startsWith("cross")).toBe(true);
     expect(stations.findIndex((s: any) => s.name.toLowerCase().includes(" cross"))).toBeGreaterThan(0);
     expect(c.fetches()).toBe(0);
-    expect(c.logs).toEqual([]);
+    expect(c.logs).toHaveLength(10);
+    expect(c.logs.every((line: any) => line.event === "request" && line.path === "/mcp" && line.status === 200)).toBe(true);
   });
   test("empty matches are successful and search arguments are validated", async () => {
     const c = client();
@@ -238,5 +239,62 @@ describe("MCP discovery and regressions", () => {
       expect((await response.json() as any).error.message).toContain("MCP-Protocol-Version");
     }
     expect(c.fetches()).toBe(0);
+  });
+});
+
+describe("MCP review fixes", () => {
+  test("known stations rejected by a provider are unavailable, never suggested back", async () => {
+    for (const fixture of [false, true]) {
+      const c = client(fixture ? {} : { provider: { name: "ldbws", fetchBoard: async () => ({ kind: "unknown_crs" }) } });
+      const result = await c.call("get_departures", { crs: "kgx" });
+      expect(result.isError).toBe(true);
+      const text = result.content[0].text;
+      expect(text).toContain("London Kings Cross (KGX) is a known station, but no departure board is available for it right now.");
+      expect(text).not.toContain("Possible stations");
+      expect(text).not.toContain("Use find_station");
+      expect(text.includes("fixture mode")).toBe(fixture);
+      if (fixture) {
+        expect(text).toContain("only NBN, GNW and ZZZ");
+        expect(text).toContain("Retrying this code will not produce a board");
+        expect(c.fetches()).toBe(1);
+      }
+    }
+  });
+
+  test("short queries match only name or CRS prefixes, including punctuated input", async () => {
+    const c = client();
+    for (const query of ["KG", "K.G.", "k", "Yo"]) {
+      const stations = (await c.call("find_station", { query, limit: 20 })).structuredContent.stations;
+      const prefix = query.replace(/\./g, "").toLowerCase();
+      expect(stations.length).toBeGreaterThan(0);
+      for (const station of stations) expect(station.name.toLowerCase().startsWith(prefix) || station.crs.toLowerCase().startsWith(prefix)).toBe(true);
+      expect(stations.some((station: any) => station.name === "Wakefield Kirkgate")).toBe(false);
+    }
+    expect(c.fetches()).toBe(0);
+  });
+
+  test("station hints never suggest the queried CRS", async () => {
+    const { stationHint } = await import("../src/stations");
+    expect(stationHint("KGX")).not.toContain("(KGX)");
+    expect(stationHint("kgx")).not.toContain("(KGX)");
+  });
+
+  test("search keeps access logs without sending LoggerLizard analytics", async () => {
+    const { spyOn } = await import("bun:test");
+    const previousKey = process.env.LIZARD_SECRET_KEY;
+    const network = spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
+    process.env.LIZARD_SECRET_KEY = "test-only-key";
+    try {
+      const c = client();
+      await c.call("find_station", { query: "Kings Cross" });
+      expect(network).not.toHaveBeenCalled();
+      expect(c.fetches()).toBe(0);
+      expect(c.logs).toHaveLength(1);
+      expect(c.logs[0]).toMatchObject({ event: "request", method: "POST", path: "/mcp", status: 200 });
+    } finally {
+      network.mockRestore();
+      if (previousKey === undefined) delete process.env.LIZARD_SECRET_KEY;
+      else process.env.LIZARD_SECRET_KEY = previousKey;
+    }
   });
 });
