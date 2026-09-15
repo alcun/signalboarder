@@ -87,8 +87,8 @@ function client(options: Partial<Parameters<typeof createApp>[0]> = {}) {
   const fixture = createFixtureProvider();
   let fetches = 0;
   const logs: unknown[] = [];
-  const server = createApp({ provider: { name: "fixture", fetchBoard: (crs, rows) => {
-    fetches++; return fixture.fetchBoard(crs, rows);
+  const server = createApp({ provider: { name: "fixture", fetchBoard: (crs, rows, query) => {
+    fetches++; return fixture.fetchBoard(crs, rows, query);
   } }, log: (line) => logs.push(line), ...options });
   const request = (message: unknown, headers: Record<string, string> = {}) => server.fetch(new Request("http://edge/mcp", {
     method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(message),
@@ -231,7 +231,7 @@ describe("MCP discovery and regressions", () => {
       const result = (await response.json() as any).result;
       expect(result.protocolVersion).toBe(version ?? "2025-06-18");
       expect(result.instructions).toContain("find_station");
-      expect(result.serverInfo.version).toBe("1.1.0");
+      expect(result.serverInfo.version).toBe("1.2.0");
     }
     for (const version of ["", "garbage", "2020-01-01"]) {
       const response = await c.request({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_departures", arguments: { crs: "NBN" } } }, { "MCP-Protocol-Version": version });
@@ -243,6 +243,49 @@ describe("MCP discovery and regressions", () => {
 });
 
 describe("MCP review fixes", () => {
+  test("validates the bounded future departure window", async () => {
+    const c = client();
+    const invalid = [
+      { time_offset: -1 }, { time_offset: 120 }, { time_offset: 1.5 }, { time_offset: "30" }, { time_offset: null },
+      { time_window: 0 }, { time_window: 121 }, { time_window: 1.5 }, { time_window: "30" }, { time_window: null },
+      { time_offset: 90, time_window: 31 }, { time_offset: 119, time_window: 2 },
+    ];
+    for (const extra of invalid) {
+      const result = await c.call("get_departures", { crs: "NBN", ...extra });
+      expect(result.isError).toBe(true);
+    }
+    expect(c.fetches()).toBe(0);
+  });
+
+  test("normalizes explicit default window values onto the ordinary REST cache", async () => {
+    const c = client({ now: () => 1_800_000_000_000 });
+    const ordinary = await c.call("get_departures", { crs: "NBN", rows: 3 });
+    const explicit = await c.call("get_departures", { crs: "NBN", rows: 3, time_offset: 0, time_window: 120 });
+    expect(ordinary.isError).toBe(false);
+    expect(explicit.isError).toBe(false);
+    expect(explicit.structuredContent).toEqual(ordinary.structuredContent);
+    expect(c.fetches()).toBe(1);
+  });
+
+  test("future window text corresponds to the structured board and still fetches once", async () => {
+    const c = client();
+    const result = await c.call("get_departures", { crs: "NBN", rows: 3, time_offset: 90, time_window: 30 });
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent.station).toBe("New Brighton");
+    expect(result.structuredContent.services).toHaveLength(2);
+    expect(result.content[0].text).toMatch(/90/);
+    expect(result.content[0].text).toMatch(/30/);
+    expect(c.fetches()).toBe(1);
+  });
+
+  test("reports the two-hour API limit without fetching when a future request exceeds it", async () => {
+    const c = client();
+    const result = await c.call("get_departures", { crs: "NBN", time_offset: 119, time_window: 2 });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/120 minutes|2 hours|2-hour/);
+    expect(c.fetches()).toBe(0);
+  });
+
   test("known stations rejected by a provider are unavailable, never suggested back", async () => {
     for (const fixture of [false, true]) {
       const c = client(fixture ? {} : { provider: { name: "ldbws", fetchBoard: async () => ({ kind: "unknown_crs" }) } });

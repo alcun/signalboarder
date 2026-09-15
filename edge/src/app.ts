@@ -3,7 +3,7 @@ import { Hono, type Context } from "hono";
 import { createBoardCache, type BoardResult } from "./cache";
 import { lizard } from "./lizard";
 import { handleMcp, PROTOCOL_VERSIONS } from "./mcp";
-import type { Provider } from "./providers";
+import type { Provider, DepartureWindow } from "./providers";
 
 /**
  * The Signalboarder departure API.
@@ -203,7 +203,7 @@ export function createApp(config: EdgeConfig) {
     return next();
   });
 
-  async function departures(c: Context, crs: string, rowQuery?: string) {
+  async function departures(c: Context, crs: string, rowQuery?: string, query?: DepartureWindow) {
     const requestId = c.get("requestId");
 
     // Server-side analytics for this route only, and deliberately NOT on every
@@ -227,7 +227,7 @@ export function createApp(config: EdgeConfig) {
 
     let result: BoardResult;
     try {
-      result = await cache.get(crs, rows);
+      result = await cache.get(crs, rows, query);
     } catch (error) {
       log({
         event: "provider_error",
@@ -272,6 +272,7 @@ export function createApp(config: EdgeConfig) {
           station: result.board.station,
           rows,
           stale: result.stale,
+          ...(query ? { time_offset: query.offset, time_window: query.window } : {}),
         },
         result.stale ? "stale" : "ok",
       );
@@ -315,7 +316,7 @@ export function createApp(config: EdgeConfig) {
       return c.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error: body must be JSON." } }, 200);
     }
 
-    const { status, body } = await handleMcp(message, async (crs, rows) => departures(c, crs, String(rows)), config.provider.name === "fixture");
+    const { status, body } = await handleMcp(message, async (crs, rows, query) => departures(c, crs, String(rows), query), config.provider.name === "fixture");
     if (body === null) return c.body(null, status as 202);
     return c.json(body as object, status as 200);
   });

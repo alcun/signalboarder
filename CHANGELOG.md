@@ -4,6 +4,9 @@
 
 ### Added
 
+- Add optional MCP departure offsets and windows within National Rail’s two-hour
+  horizon, using separate cache entries and the existing shared provider budget.
+
 - Add MCP station lookup from the bundled station list, with ranked name/CRS
   matching, output schemas and station suggestions for invalid departure codes.
 

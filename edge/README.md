@@ -146,7 +146,7 @@ Try: **“What are the next five trains from King's Cross?”**
 | Tool | Arguments | Result |
 |---|---|---|
 | `find_station` | `query`: name, partial name or CRS; `limit`: 1–20, default 5 | `{query, stations: [{name, crs}]}` and a readable list |
-| `get_departures` | `crs`: three letters; `rows`: 1–10, default 2 | The departure JSON above and a readable board |
+| `get_departures` | `crs`: three letters; `rows`: 1–10, default 2; optional `time_offset` and `time_window` in minutes | The departure JSON above and a readable board |
 
 Search is case/punctuation-insensitive: “Kings Cross” finds KGX, “St Pancras”
 finds STP, and “&” matches “and”. Exact codes and names rank first. Ask the
@@ -159,6 +159,32 @@ means an older cached board after a failed refresh or exhausted budget; fresh
 cache hits have `stale: false`. `generatedAt` is the response timestamp, not
 the provider observation time. Preserve the National Rail attribution.
 Calling points may be missing and cover only the first portion of split trains.
+
+### Departures later in the next two hours
+
+For trains starting an hour from now:
+
+```json
+{"crs":"KGX","rows":5,"time_offset":60,"time_window":30}
+```
+
+`time_offset` is 0–119 elapsed minutes ahead; `time_window` is 1–120 minutes.
+Their sum must be at most **120**. If omitted, the window covers the remaining
+part of that two-hour horizon. With neither argument, behaviour is unchanged.
+These are relative minutes, not a date or UK clock time. A 6pm train cannot be
+checked in the morning; ask again within two hours of departure. Future
+“On time” is the current report, not a guarantee.
+
+Each distinct window has its own cache entry but uses the same daily provider
+budget. An uncached request costs at most one provider call; repeated cached
+requests cost none. Cached results describe the window at provider query time,
+not a newly shifted window on every request. The result text labels the window;
+the structured departure model stays unchanged.
+
+The public RDM endpoint was checked with live requests on 15 September 2026:
+60+30, 90+30 and 119+1 minute windows returned correctly shifted departures;
+360+30 was rejected. This is the public LDBWS product, not the separate staff
+API with different time-query support.
 
 ### Check the connection
 
@@ -187,7 +213,7 @@ Each MCP request counts once against the REST API's request limit. Station
 search spends no provider budget and emits no per-search analytics. Standard
 stdout `request` access logs remain enabled for `/mcp`. Departures
 use the existing route, cache and daily budget: at most one provider fetch per
-call. There are no arrivals, time-window or journey-planning tools.
+call. There are no arrivals or journey-planning tools, and no queries beyond two hours.
 
 Tool failures return `isError: true` with recovery advice; invalid/unknown codes
 include up to three station suggestions where possible. A known station rejected

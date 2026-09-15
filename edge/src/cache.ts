@@ -7,7 +7,7 @@
  */
 
 import type { Board } from "./departures";
-import type { Provider, ProviderResult } from "./providers";
+import type { DepartureWindow, Provider, ProviderResult } from "./providers";
 
 export interface CacheOptions {
   provider: Provider;
@@ -47,8 +47,11 @@ export function createBoardCache(options: CacheOptions) {
   let spent = 0;
   let budgetResetsAt = 0;
 
-  function key(crs: string, rows: number): string {
-    return `${crs.toUpperCase()}:${rows}`;
+  function key(crs: string, rows: number, query?: DepartureWindow): string {
+    // The provider's ordinary board is deliberately the legacy key, so REST
+    // and default MCP requests share it.  A future window is a distinct board.
+    if (!query || (query.offset === 0 && query.window === 120)) return `${crs.toUpperCase()}:${rows}`;
+    return `${crs.toUpperCase()}:${rows}:${query.offset}:${query.window}`;
   }
 
   function takeBudget(): boolean {
@@ -62,12 +65,12 @@ export function createBoardCache(options: CacheOptions) {
     return true;
   }
 
-  async function callProvider(crs: string, rows: number): Promise<ProviderResult> {
-    const id = key(crs, rows);
+  async function callProvider(crs: string, rows: number, query?: DepartureWindow): Promise<ProviderResult> {
+    const id = key(crs, rows, query);
     const existing = inFlight.get(id);
     if (existing) return existing;
 
-    const attempt = options.provider.fetchBoard(crs, rows).finally(() => inFlight.delete(id));
+    const attempt = options.provider.fetchBoard(crs, rows, query).finally(() => inFlight.delete(id));
     inFlight.set(id, attempt);
     return attempt;
   }
@@ -77,8 +80,8 @@ export function createBoardCache(options: CacheOptions) {
       return { entries: entries.size, spent, budget: options.dailyBudget };
     },
 
-    async get(crs: string, rows: number): Promise<BoardResult> {
-      const id = key(crs, rows);
+    async get(crs: string, rows: number, query?: DepartureWindow): Promise<BoardResult> {
+      const id = key(crs, rows, query);
       const t = now();
       const cached = entries.get(id);
 
@@ -95,7 +98,7 @@ export function createBoardCache(options: CacheOptions) {
         return { kind: "budget_spent" };
       }
 
-      const result = await callProvider(crs, rows);
+      const result = await callProvider(crs, rows, query);
 
       if (result.kind === "ok") {
         entries.set(id, {

@@ -26,3 +26,11 @@ also regenerate the device's station header.
 Server tests cover provider mapping, API responses, caching and limits. Device
 tests cover parsing normalised responses and station lookup. The two suites
 use different fixture formats because they test different stages.
+
+## MCP time windows
+
+MCP can query later departures only within the public provider’s next two-hour
+horizon. Offsets use elapsed minutes to avoid clock-time/date/DST ambiguity.
+Explicit default windows share the ordinary board cache; other windows have
+separate cache keys and share one daily budget. REST and device defaults remain
+unchanged. A missing future board never falls back to the current-time cache.

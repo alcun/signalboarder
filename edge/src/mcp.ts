@@ -1,5 +1,6 @@
 /** Stateless Streamable HTTP; departures always use the shared route. */
 import type { Board } from "./departures";
+import type { DepartureWindow } from "./providers";
 import { findStations, stationHint, stationByCrs } from "./stations";
 
 export const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -12,7 +13,7 @@ interface JsonRpcRequest {
 }
 
 export interface McpReply { status: number; body: unknown | null }
-type Dispatch = (crs: string, rows: number) => Promise<Response>;
+type Dispatch = (crs: string, rows: number, query?: DepartureWindow) => Promise<Response>;
 type DepartureResult = Board & { generatedAt: string; stale: boolean; attribution: string };
 const string = { type: "string" } as const;
 const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true };
@@ -20,12 +21,14 @@ const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint
 const departureTool = {
   name: "get_departures",
   title: "Live train departures",
-  description: "Get the next 1–10 UK railway departures (default 2). Use find_station if you only have a station name. Scheduled and estimated times are Europe/London local time, 24h. expected is On time, Delayed (no estimate), Cancelled, an HH:MM estimate, or No report. stale: true means an older cached board served after a failed refresh or exhausted budget; stale: false may still be a fresh cache hit. generatedAt is the response timestamp, not the provider observation time. Preserve attribution when presenting results. Calling points may be absent or only cover the first portion of a splitting train. This is a departure board, not a journey planner.",
+  description: "Get 1–10 UK railway departures (default 2), now or within the next two hours. time_offset starts the search that many minutes ahead; time_window is its duration (default: the remainder of the two-hour horizon). Their sum must be at most 120. Requests beyond two hours, later today or tomorrow are unsupported: explain the limit instead of returning current trains. Future On time is the current report, not a guarantee. Use find_station if you only have a station name. Scheduled and estimated times are Europe/London local time, 24h. expected is On time, Delayed (no estimate), Cancelled, an HH:MM estimate, or No report. stale: true means an older cached board served after a failed refresh or exhausted budget; stale: false may still be a fresh cache hit. generatedAt is the response timestamp, not the provider observation time. Preserve attribution when presenting results. Calling points may be absent or only cover the first portion of a splitting train. This is a departure board, not a journey planner.",
   inputSchema: {
     type: "object",
     properties: {
       crs: { type: "string", description: "Three-letter National Rail CRS code, e.g. KGX. Case-insensitive." },
       rows: { type: "integer", minimum: 1, maximum: 10, default: 2 },
+      time_offset: { type: "integer", minimum: 0, maximum: 119, default: 0, description: "Minutes ahead of provider query time to start; current departures if omitted. Relative elapsed minutes, not a UK clock time." },
+      time_window: { type: "integer", minimum: 1, maximum: 120, description: "Search duration in minutes; defaults to 120 minus time_offset. Offset plus window must not exceed 120." },
     },
     required: ["crs"], additionalProperties: false,
   },
@@ -110,9 +113,10 @@ async function failureText(response: Response, crs: string, fixture: boolean): P
   }
 }
 
-function boardText(board: DepartureResult): string {
+function boardText(board: DepartureResult, query?: DepartureWindow): string {
   return [
     `${board.station} (${board.crs}) — departures, Europe/London`,
+    ...(query ? [`Search window: ${query.offset}–${query.offset + query.window} minutes after provider query time (${query.window}-minute window); cached boards may predate this response. Future status can change.`] : []),
     `Generated: ${board.generatedAt} (response time) | stale: ${board.stale}${board.stale ? " — older cached data; live refresh unavailable" : ""}`,
     ...board.services.map((service) => {
       const points = service.callingAt ?? [];
@@ -136,11 +140,16 @@ async function callTool(id: JsonRpcRequest["id"], name: string, args: Record<str
   if (typeof args.crs !== "string" || !args.crs) return toolError(id, "The crs argument is required. Use find_station to look up a station name.");
   if (!/^[a-z]{3}$/i.test(args.crs)) return toolError(id, `The CRS code must be three letters. ${stationHint(args.crs)}`);
   if (args.rows !== undefined && (typeof args.rows !== "number" || !Number.isInteger(args.rows) || args.rows < 1 || args.rows > 10)) return toolError(id, "The rows argument must be an integer from 1 to 10.");
-  if (Object.keys(args).some((key) => key !== "crs" && key !== "rows")) return toolError(id, "Only crs and rows arguments are supported.");
-  const response = await dispatch(args.crs, (args.rows as number | undefined) ?? 2);
+  if (Object.keys(args).some((key) => !["crs", "rows", "time_offset", "time_window"].includes(key))) return toolError(id, "Only crs, rows, time_offset and time_window arguments are supported.");
+  const offset = args.time_offset ?? 0;
+  if (args.time_offset === null || typeof offset !== "number" || !Number.isInteger(offset) || offset < 0 || offset > 119) return toolError(id, "time_offset must be an integer from 0 to 119 minutes. National Rail only supports the next 2 hours (120 minutes); try again nearer departure for later trains.");
+  const window = args.time_window ?? (120 - offset);
+  if (args.time_window === null || typeof window !== "number" || !Number.isInteger(window) || window < 1 || window > 120 || offset + window > 120) return toolError(id, "time_window must be a positive integer and time_offset + time_window must be at most 120 minutes (2 hours). Use a shorter window or try again nearer departure.");
+  const query = offset === 0 && window === 120 ? undefined : { offset, window };
+  const response = await dispatch(args.crs, (args.rows as number | undefined) ?? 2, query);
   if (!response.ok) return toolError(id, await failureText(response, args.crs, fixture));
   const board = await response.json() as DepartureResult;
-  return success(id, board, boardText(board));
+  return success(id, board, boardText(board, query));
 }
 
 export async function handleMcp(message: unknown, dispatch: Dispatch, fixture = false): Promise<McpReply> {
@@ -156,8 +165,8 @@ export async function handleMcp(message: unknown, dispatch: Dispatch, fixture = 
     const protocolVersion = typeof requested === "string" && PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0];
     return reply(request.id, {
       protocolVersion, capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: "signalboarder", title: "Signalboarder", version: "1.1.0" },
-      instructions: "Use find_station to turn a station name into a CRS code, then get_departures for the next 1–10 trains (default 2). Resolve ambiguous station names with the user. Both tools share the request limit; station search uses no provider budget and each departure call makes at most one provider fetch. Preserve National Rail attribution, explain stale results, and treat times as Europe/London. generatedAt is response time, not data age. Respect Retry-After on HTTP 429. No arrivals, later time windows or journey planning.",
+      serverInfo: { name: "signalboarder", title: "Signalboarder", version: "1.2.0" },
+      instructions: "Use find_station to turn a station name into a CRS code, then get_departures for the next 1–10 trains (default 2). Resolve ambiguous station names with the user. Both tools share the request limit; station search uses no provider budget and each departure call makes at most one provider fetch. Preserve National Rail attribution, explain stale results, and treat times as Europe/London. generatedAt is response time, not data age. Respect Retry-After on HTTP 429. For later departures use time_offset and optional time_window, whose sum must be at most 120 minutes. There is no support beyond the next two hours, arrivals or journey planning. Future status may change.",
     });
   }
   if (request.method === "tools/list") return reply(request.id, { tools: [departureTool, stationTool] });

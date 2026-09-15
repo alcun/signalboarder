@@ -8,6 +8,15 @@
 
 import { normaliseBoard, type Board } from "./departures";
 
+export interface DepartureWindow {
+  offset: number;
+  window: number;
+}
+
+export function normaliseDepartureWindow(query?: DepartureWindow): DepartureWindow | undefined {
+  return query && !(query.offset === 0 && query.window === 120) ? query : undefined;
+}
+
 /**
  * A provider answers with exactly one of these. The distinction between
  * `unknown_crs` and `unavailable` is the whole reason this is a discriminated
@@ -21,14 +30,14 @@ export type ProviderResult =
 
 export interface Provider {
   readonly name: string;
-  fetchBoard(crs: string, rows: number): Promise<ProviderResult>;
+  fetchBoard(crs: string, rows: number, query?: DepartureWindow): Promise<ProviderResult>;
 }
 
 export interface LdbwsOptions {
   baseUrl: string;
   apiKey: string;
   timeoutMs: number;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>;
 }
 
 /**
@@ -42,8 +51,13 @@ export function createLdbwsProvider(options: LdbwsOptions): Provider {
 
   return {
     name: "ldbws",
-    async fetchBoard(crs, rows) {
-      const url = `${options.baseUrl.replace(/\/$/, "")}/${encodeURIComponent(crs.toUpperCase())}`;
+    async fetchBoard(crs, rows, query) {
+      query = normaliseDepartureWindow(query);
+      const url = new URL(`${options.baseUrl.replace(/\/$/, "")}/${encodeURIComponent(crs.toUpperCase())}`);
+      if (query) {
+        url.searchParams.set("timeOffset", String(query.offset));
+        url.searchParams.set("timeWindow", String(query.window));
+      }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), options.timeoutMs);
 
@@ -71,7 +85,10 @@ export function createLdbwsProvider(options: LdbwsOptions): Provider {
       // the editing actions still visible, while `unavailable` renders a
       // network error. Getting it wrong tells someone who typed a bad code
       // that the service is broken.
-      if (response.status === 400 || response.status === 404) {
+      if (response.status === 400) {
+        return query ? { kind: "unavailable", reason: "invalid_time_window" } : { kind: "unknown_crs" };
+      }
+      if (response.status === 404) {
         return { kind: "unknown_crs" };
       }
 
@@ -136,6 +153,7 @@ function service(
     ...(callingAt.length
       ? { subsequentCallingPoints: [{ callingPoint: callingAt.map((n) => ({ locationName: n })) }] }
       : {}),
+    minutesFromNow,
   };
 }
 
@@ -196,10 +214,17 @@ function fixtures(): Record<string, unknown> {
 export function createFixtureProvider(): Provider {
   return {
     name: "fixture",
-    async fetchBoard(crs, rows) {
-      const payload = fixtures()[crs.toUpperCase()];
+    async fetchBoard(crs, rows, query) {
+      query = normaliseDepartureWindow(query);
+      const payload = fixtures()[crs.toUpperCase()] as { locationName?: unknown; trainServices?: unknown[] } | undefined;
       if (!payload) return { kind: "unknown_crs" };
-      const board = normaliseBoard(crs, payload, rows);
+      const filtered = query && payload.trainServices
+        ? { ...payload, trainServices: payload.trainServices.filter((entry) => {
+          const minutes = (entry as { minutesFromNow?: unknown }).minutesFromNow;
+          return typeof minutes === "number" && minutes >= query.offset && minutes <= query.offset + query.window;
+        }) }
+        : payload;
+      const board = normaliseBoard(crs, filtered, rows);
       if (!board) return { kind: "unavailable", reason: "unexpected_shape" };
       return { kind: "ok", board };
     },
