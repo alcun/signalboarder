@@ -134,8 +134,9 @@ tools in Agent chat. **MCP: Add Server** also provides a guided setup.
 [VS Code instructions](https://code.visualstudio.com/docs/agent-customization/mcp-servers).
 
 Client instructions checked against official documentation on 15 September 2026.
-Claude Code's HTTP connection was tested locally with fixtures. Desktop/claude.ai,
-Cursor and VS Code UI setup has not been tested hands-on. Locally running CLI/IDE
+Claude Code's HTTP connection was tested locally with fixtures. The Claude
+Desktop custom connector was tested hands-on against the live server on
+15 September 2026. Cursor and VS Code UI setup has not been tested hands-on. Locally running CLI/IDE
 clients can use `http://127.0.0.1:3000/mcp` when the edge runs on the same machine;
 cloud-hosted clients need an address reachable from their host.
 
