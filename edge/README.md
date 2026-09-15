@@ -222,10 +222,10 @@ same code again. Queries shorter than three characters match name/code prefixes 
 retry message and `Retry-After`. Budget errors suggest checking again in five
 minutes, but exhaustion may last until the rolling 24-hour budget resets.
 
-The target protocol is `2025-06-18`; `2025-03-26` and `2024-11-05` version
+The target protocol is `2025-11-25`; `2025-06-18`, `2025-03-26` and `2024-11-05` version
 values remain accepted over this POST transport (no legacy SSE endpoint).
 Missing version headers use `2025-03-26` compatibility behaviour; unsupported
-headers return HTTP 400, per the [MCP transport specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports).
+headers return HTTP 400, per the [MCP transport specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
 Send one JSON-RPC message per POST; batches are rejected. Notifications receive
 HTTP 202 with no body and do not execute tools. `GET /mcp` returns HTTP 405.
 Configured origin allow-lists apply to MCP browser requests.

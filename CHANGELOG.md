@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Accept MCP protocol version `2025-11-25`. Clients sending that
+  `MCP-Protocol-Version` header, including Claude's custom connectors, were
+  rejected with HTTP 400, which Claude reported as a sign-in requirement.
+
 ### Added
 
 - Add optional MCP departure offsets and windows within National Rail’s two-hour

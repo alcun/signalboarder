@@ -226,10 +226,10 @@ describe("MCP discovery and regressions", () => {
   });
   test("accepts older/missing protocol headers; rejects unsupported headers before dispatch", async () => {
     const c = client();
-    for (const version of [undefined, "2025-06-18", "2025-03-26", "2024-11-05"]) {
+    for (const version of [undefined, "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]) {
       const response = await c.request({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: version ?? "future" } }, version ? { "MCP-Protocol-Version": version } : {});
       const result = (await response.json() as any).result;
-      expect(result.protocolVersion).toBe(version ?? "2025-06-18");
+      expect(result.protocolVersion).toBe(version ?? "2025-11-25");
       expect(result.instructions).toContain("find_station");
       expect(result.serverInfo.version).toBe("1.2.0");
     }

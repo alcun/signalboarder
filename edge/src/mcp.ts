@@ -3,7 +3,7 @@ import type { Board } from "./departures";
 import type { DepartureWindow } from "./providers";
 import { findStations, stationHint, stationByCrs } from "./stations";
 
-export const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
+export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 interface JsonRpcRequest {
   jsonrpc?: string;
