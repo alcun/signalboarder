@@ -26,8 +26,11 @@ ${PAGES.map((page) => `- [${page.h1}](${page.slug ? `${base}/${page.slug}` : bas
 ## MCP
 
 - Endpoint: https://signalboarder.alcun.dev/mcp (Streamable HTTP, no account or API key).
-- Read-only tool: get_departures. Arguments: crs (three-letter station code), rows (integer 1 to 10, default 2).
-- Returns the same departure model as the board, including stale and National Rail attribution. Shared request limits apply.
+- find_station: query (station name, partial name or CRS), limit (1–20, default 5). Returns query and stations [{name, crs}]. Search “Kings Cross” to get KGX; ask the user to resolve ambiguous matches.
+- get_departures: crs (three letters), rows (1–10, default 2). Returns a readable board and structured JSON with station, crs, generatedAt, stale, services and attribution.
+- Scheduled/estimated times are Europe/London, 24h. expected is “On time”, “Delayed”, “Cancelled”, an HH:MM estimate, or “No report”.
+- stale: true means older cached data after refresh failure or budget exhaustion. generatedAt is response time, not the provider observation time. Preserve National Rail attribution.
+- Both tools share request limits. Station search uses no provider calls; departures share the board’s cache and daily budget. Follow Retry-After on HTTP 429. No arrivals or journey planning.
 - [Connection instructions](https://github.com/alcun/signalboarder/blob/main/edge/README.md#mcp-setup).
 
 ## Related

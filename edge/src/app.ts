@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 
 import { createBoardCache, type BoardResult } from "./cache";
 import { lizard } from "./lizard";
-import { handleMcp } from "./mcp";
+import { handleMcp, PROTOCOL_VERSIONS } from "./mcp";
 import type { Provider } from "./providers";
 
 /**
@@ -166,6 +166,10 @@ export function createApp(config: EdgeConfig) {
 
     await next();
 
+    // MCP discovery/search has no provider cost. Departure analytics are
+    // emitted by departures() for real fetches and failures only.
+    if (c.req.path === "/mcp") return;
+
     log({
       event: "request",
       request_id: requestId,
@@ -195,6 +199,9 @@ export function createApp(config: EdgeConfig) {
         ip: address,
         ua: c.req.header("user-agent"),
       });
+      if (c.req.path === "/mcp") {
+        return send(c, 429, { ok: false, code: "rate_limited", message: `Request limit reached. Retry in ${retryAfterSeconds} seconds.` }, { "cache-control": "no-store", "retry-after": String(retryAfterSeconds) });
+      }
       return fail(c, 429, "rate_limited", { "retry-after": String(retryAfterSeconds) });
     }
     return next();
@@ -292,6 +299,16 @@ export function createApp(config: EdgeConfig) {
   }
 
   app.get("/v1/departures/:crs", (c) => departures(c, c.req.param("crs"), c.req.query("rows")));
+
+  app.use("/mcp", async (c, next) => {
+    // Missing headers use the 2025-03-26 compatibility behaviour. This
+    // stateless server does not store a negotiated version between requests.
+    const version = c.req.header("MCP-Protocol-Version") ?? "2025-03-26";
+    if (!PROTOCOL_VERSIONS.includes(version)) {
+      return c.json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: `Unsupported MCP-Protocol-Version. Use ${PROTOCOL_VERSIONS.join(", ")}.` } }, 400);
+    }
+    return next();
+  });
 
   app.post("/mcp", async (c) => {
     c.header("cache-control", "no-store");

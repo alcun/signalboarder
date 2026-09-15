@@ -4,6 +4,9 @@
 
 ### Added
 
+- Add MCP station lookup from the bundled station list, with ranked name/CRS
+  matching, output schemas and station suggestions for invalid departure codes.
+
 - Cache departure boards in the browser with TanStack Query, sharing one
   ten-train response across both views and restoring recent stations immediately.
 
@@ -15,11 +18,19 @@
 
 ### Changed
 
+- Return readable MCP departure boards alongside the unchanged structured model,
+  with time, stale-data, attribution and retry guidance.
+- Shorten the website MCP section, move it below Common questions, and update
+  the tool reference and llms.txt with the station-to-departures workflow.
+
 - Simplify repository documentation to setup, API and development information.
 - Remove the agent-specific guide and internal operational narratives.
 - Add a railway animation to the README and refresh installation instructions.
 
 ### Fixed
+
+- Reject unsupported MCP protocol headers and omit per-request MCP access logs
+  so local station search produces no per-call logging.
 
 - Restore the compact, centred platform board after the layout-stability pass
   spread its header, departures and clock across the entire screen.

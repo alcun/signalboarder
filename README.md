@@ -41,9 +41,9 @@ for configuration, limits and running behind HTTPS.
 ## Use with an AI assistant
 
 Connect a remote MCP client to `https://signalboarder.alcun.dev/mcp` using
-Streamable HTTP. No account or API key is needed. Ask for departures using a
-three-letter station code, for example “Show the next five trains from KGX”.
-The read-only `get_departures` tool shares the board's data and service limits.
+Streamable HTTP. No account or API key is needed. Try “Show the next five
+trains from King’s Cross”. `find_station` resolves the station name, then
+`get_departures` checks the board’s live data. Both tools share its request limit.
 See [MCP setup and examples](edge/README.md#mcp-setup).
 
 ## Development

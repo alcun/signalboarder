@@ -1,12 +1,8 @@
-/**
- * Minimal stateless Streamable HTTP MCP handler for the public departure API.
- *
- * The tool deliberately uses the existing departure handler. That keeps
- * provider caching, limits and the response contract identical for browsers,
- * devices and agents.
- */
+/** Stateless Streamable HTTP; departures always use the shared route. */
+import type { Board } from "./departures";
+import { findStations, stationHint } from "./stations";
 
-const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
+export const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
 interface JsonRpcRequest {
   jsonrpc?: string;
@@ -15,112 +11,154 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
-export interface McpReply {
-  status: number;
-  body: unknown | null;
-}
+export interface McpReply { status: number; body: unknown | null }
+type Dispatch = (crs: string, rows: number) => Promise<Response>;
+type DepartureResult = Board & { generatedAt: string; stale: boolean; attribution: string };
+const string = { type: "string" } as const;
+const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true };
 
-const tool = {
+const departureTool = {
   name: "get_departures",
-  description: "Get live departures for a UK railway station by its three-letter CRS code.",
+  title: "Live train departures",
+  description: "Get the next 1–10 UK railway departures (default 2). Use find_station if you only have a station name. Scheduled and estimated times are Europe/London local time, 24h. expected is On time, Delayed (no estimate), Cancelled, an HH:MM estimate, or No report. stale: true means an older cached board served after a failed refresh or exhausted budget; stale: false may still be a fresh cache hit. generatedAt is the response timestamp, not the provider observation time. Preserve attribution when presenting results. Calling points may be absent or only cover the first portion of a splitting train. This is a departure board, not a journey planner.",
   inputSchema: {
     type: "object",
     properties: {
-      crs: { type: "string", description: "Three-letter National Rail CRS station code, for example NBN." },
-      rows: { type: "integer", minimum: 1, maximum: 10, description: "Number of departures to return, from 1 to 10." },
+      crs: { type: "string", description: "Three-letter National Rail CRS code, e.g. KGX. Case-insensitive." },
+      rows: { type: "integer", minimum: 1, maximum: 10, default: 2 },
     },
-    required: ["crs"],
-    additionalProperties: false,
+    required: ["crs"], additionalProperties: false,
   },
-  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-} as const;
+  outputSchema: {
+    type: "object",
+    properties: {
+      crs: string, station: string, generatedAt: string, stale: { type: "boolean" }, attribution: string,
+      services: {
+        type: "array", maxItems: 10,
+        items: {
+          type: "object",
+          properties: {
+            scheduled: string, expected: string, destination: string, platform: string,
+            disrupted: { type: "boolean" }, callingAt: { type: "array", items: string },
+          },
+          required: ["scheduled", "expected", "destination", "platform", "disrupted"], additionalProperties: false,
+        },
+      },
+    },
+    required: ["crs", "station", "generatedAt", "stale", "services", "attribution"], additionalProperties: false,
+  },
+  annotations: { ...annotations, openWorldHint: true },
+};
+
+const stationTool = {
+  name: "find_station",
+  title: "Find a UK railway station",
+  description: "Resolve a station name, partial name or CRS code before calling get_departures. Exact CRS, exact name, name prefix, word prefix, then substring matches. Case and punctuation are ignored. Choose the intended station from ambiguous results; ask the user if needed. Searches a bundled list with no live provider call. Station data: Dav Wheat and Trainline EU, ODbL.",
+  inputSchema: {
+    type: "object",
+    properties: { query: { type: "string", description: "Station name or code, e.g. King's Cross, St Pancras or NBN." }, limit: { type: "integer", minimum: 1, maximum: 20, default: 5 } },
+    required: ["query"], additionalProperties: false,
+  },
+  outputSchema: {
+    type: "object",
+    properties: {
+      query: string,
+      stations: { type: "array", maxItems: 20, items: {
+        type: "object", properties: { name: string, crs: string }, required: ["name", "crs"], additionalProperties: false,
+      } },
+    },
+    required: ["query", "stations"], additionalProperties: false,
+  },
+  annotations: { ...annotations, openWorldHint: false },
+};
 
 function reply(id: JsonRpcRequest["id"], result: unknown): McpReply {
   return { status: 200, body: { jsonrpc: "2.0", id: id ?? null, result } };
 }
-
 function error(id: JsonRpcRequest["id"], code: number, message: string): McpReply {
   return { status: 200, body: { jsonrpc: "2.0", id: id ?? null, error: { code, message } } };
 }
-
 function toolError(id: JsonRpcRequest["id"], message: string): McpReply {
   return reply(id, { content: [{ type: "text", text: message }], isError: true });
 }
+function success(id: JsonRpcRequest["id"], structuredContent: unknown, text: string): McpReply {
+  return reply(id, { content: [{ type: "text", text }], structuredContent, isError: false });
+}
 
-async function failureText(response: Response): Promise<string> {
+async function failureText(response: Response, crs: string): Promise<string> {
   try {
     const body = (await response.json()) as { code?: string };
+    const retry = response.headers.get("retry-after");
     const messages: Record<string, string> = {
-      bad_crs: "The CRS code must be three letters.",
-      unknown_crs: "No station was found for that CRS code.",
-      rate_limited: "The departure API is rate limited; try again later.",
-      provider_budget: "The departure provider budget is temporarily exhausted.",
-      provider_unavailable: "The departure provider is temporarily unavailable.",
+      bad_crs: `The CRS code must be three letters. ${stationHint(crs)}`,
+      unknown_crs: `No station was found for ${crs}. ${stationHint(crs)}`,
+      rate_limited: `Request limit reached. Retry in ${retry ?? "3600"} seconds.`,
+      provider_budget: `The daily departure provider budget is exhausted. Retry in about ${retry ?? "300"} seconds; the budget may remain exhausted until its rolling 24-hour reset.`,
+      provider_unavailable: "The departure provider is temporarily unavailable. Try again in about a minute.",
     };
-    return messages[body.code ?? ""] ?? "The departure request failed.";
+    return messages[body.code ?? ""] ?? "The departure request failed. Try again in about a minute.";
   } catch {
-    return "The departure request failed.";
+    return "The departure request failed. Try again in about a minute.";
   }
 }
 
-async function callTool(id: JsonRpcRequest["id"], args: Record<string, unknown>, dispatch: (crs: string, rows: number) => Promise<Response>): Promise<McpReply> {
-  if (typeof args.crs !== "string" || !args.crs) return toolError(id, "The crs argument is required.");
-  if (!/^[a-z]{3}$/i.test(args.crs)) return toolError(id, "The CRS code must be three letters.");
-  if (args.rows !== undefined && (typeof args.rows !== "number" || !Number.isInteger(args.rows) || args.rows < 1 || args.rows > 10)) {
-    return toolError(id, "The rows argument must be an integer from 1 to 10.");
+function boardText(board: DepartureResult): string {
+  return [
+    `${board.station} (${board.crs}) — departures, Europe/London`,
+    `Generated: ${board.generatedAt} (response time) | stale: ${board.stale}${board.stale ? " — older cached data; live refresh unavailable" : ""}`,
+    ...board.services.map((service) => {
+      const points = service.callingAt ?? [];
+      return `${service.scheduled} | ${service.expected} | ${service.destination} | Platform ${service.platform || "not announced"}${points.length ? ` | Calling: ${points.slice(0, 3).join(", ")}${points.length > 3 ? ` (+${points.length - 3} more)` : ""}` : ""}`;
+    }),
+    ...(board.services.length ? [] : ["No departures currently listed."]),
+    board.attribution,
+  ].join("\n");
+}
+
+async function callTool(id: JsonRpcRequest["id"], name: string, args: Record<string, unknown>, dispatch: Dispatch): Promise<McpReply> {
+  if (name === stationTool.name) {
+    if (typeof args.query !== "string") return toolError(id, "The query argument must be a string: a station name or CRS code.");
+    if (args.limit !== undefined && (typeof args.limit !== "number" || !Number.isInteger(args.limit) || args.limit < 1 || args.limit > 20)) return toolError(id, "The limit argument must be an integer from 1 to 20.");
+    if (Object.keys(args).some((key) => key !== "query" && key !== "limit")) return toolError(id, "Only query and limit arguments are supported.");
+    const stations = findStations(args.query, (args.limit as number | undefined) ?? 5);
+    return success(id, { query: args.query, stations }, stations.length
+      ? stations.map(({ name, crs }) => `${name} (${crs})`).join("\n")
+      : "No stations found. Try a shorter query or a three-letter CRS code.");
   }
+  if (typeof args.crs !== "string" || !args.crs) return toolError(id, "The crs argument is required. Use find_station to look up a station name.");
+  if (!/^[a-z]{3}$/i.test(args.crs)) return toolError(id, `The CRS code must be three letters. ${stationHint(args.crs)}`);
+  if (args.rows !== undefined && (typeof args.rows !== "number" || !Number.isInteger(args.rows) || args.rows < 1 || args.rows > 10)) return toolError(id, "The rows argument must be an integer from 1 to 10.");
   if (Object.keys(args).some((key) => key !== "crs" && key !== "rows")) return toolError(id, "Only crs and rows arguments are supported.");
-
   const response = await dispatch(args.crs, (args.rows as number | undefined) ?? 2);
-  if (!response.ok) return toolError(id, await failureText(response));
-
-  const board = await response.json();
-  return reply(id, {
-    content: [{ type: "text", text: JSON.stringify(board) }],
-    structuredContent: board,
-    isError: false,
-  });
+  if (!response.ok) return toolError(id, await failureText(response, args.crs));
+  const board = await response.json() as DepartureResult;
+  return success(id, board, boardText(board));
 }
 
-export async function handleMcp(message: unknown, dispatch: (crs: string, rows: number) => Promise<Response>): Promise<McpReply> {
-  if (!message || Array.isArray(message) || typeof message !== "object") {
-    return error(null, -32600, "Invalid request.");
-  }
-
+export async function handleMcp(message: unknown, dispatch: Dispatch): Promise<McpReply> {
+  if (!message || Array.isArray(message) || typeof message !== "object") return error(null, -32600, "Invalid request. Send one JSON-RPC message, not a batch.");
   const request = message as JsonRpcRequest;
   if (request.jsonrpc !== "2.0" || typeof request.method !== "string" || !request.method ||
-      (request.id !== undefined && typeof request.id !== "string" && typeof request.id !== "number") ||
-      (request.params !== undefined && (!request.params || typeof request.params !== "object" || Array.isArray(request.params)))) {
-    return error(null, -32600, "Invalid request.");
-  }
-
-  if (request.id === undefined) {
-    return { status: 202, body: null };
-  }
-
+      (request.id !== undefined && typeof request.id !== "string" && (typeof request.id !== "number" || !Number.isInteger(request.id))) ||
+      (request.params !== undefined && (!request.params || typeof request.params !== "object" || Array.isArray(request.params)))) return error(null, -32600, "Invalid request.");
+  if (request.id === undefined) return { status: 202, body: null };
   if (request.method === "ping") return reply(request.id, {});
-
   if (request.method === "initialize") {
     const requested = request.params?.protocolVersion;
-    const protocolVersion = typeof requested === "string" && PROTOCOL_VERSIONS.includes(requested)
-      ? requested
-      : PROTOCOL_VERSIONS[0];
+    const protocolVersion = typeof requested === "string" && PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0];
     return reply(request.id, {
-      protocolVersion,
-      capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: "signalboarder", version: "1.0.0" },
+      protocolVersion, capabilities: { tools: { listChanged: false } },
+      serverInfo: { name: "signalboarder", title: "Signalboarder", version: "1.1.0" },
+      instructions: "Use find_station to turn a station name into a CRS code, then get_departures for the next 1–10 trains (default 2). Resolve ambiguous station names with the user. Both tools share the request limit; station search uses no provider budget and each departure call makes at most one provider fetch. Preserve National Rail attribution, explain stale results, and treat times as Europe/London. generatedAt is response time, not data age. Respect Retry-After on HTTP 429. No arrivals, later time windows or journey planning.",
     });
   }
-
-  if (request.method === "tools/list") return reply(request.id, { tools: [tool] });
-
+  if (request.method === "tools/list") return reply(request.id, { tools: [departureTool, stationTool] });
   if (request.method === "tools/call") {
     const params = request.params ?? {};
-    if (params.name !== tool.name) return error(request.id, -32602, `Unknown tool: ${String(params.name ?? "")}`);
+    if (params.name !== departureTool.name && params.name !== stationTool.name) return error(request.id, -32602, `Unknown tool: ${String(params.name ?? "")}`);
     const args = params.arguments;
     if (!args || typeof args !== "object" || Array.isArray(args)) return toolError(request.id, "Tool arguments must be an object.");
-    return callTool(request.id, args as Record<string, unknown>, dispatch);
+    return callTool(request.id, params.name, args as Record<string, unknown>, dispatch);
   }
-
   return error(request.id, -32601, `Unknown method: ${request.method}`);
 }

@@ -68,26 +68,34 @@ Returns `{"ok":true}` without contacting the provider. Exempt from rate limits.
 
 ### `POST /mcp`
 
-Stateless Streamable HTTP MCP endpoint. It exposes one read-only tool,
-`get_departures`, with required `crs` and optional `rows` arguments. Tool calls
-run through the same departure route as browser and device requests, so they
-share its cache, provider budget and error model. Send JSON-RPC `initialize`,
-`tools/list` and `tools/call` messages; notifications receive `202` with no
-body. `GET /mcp` returns a short `405` explanation.
+Stateless Streamable HTTP with two read-only tools. No account, API key,
+session ID or persistent connection is needed.
 
 ## MCP setup
 
-Hosted endpoint: `https://signalboarder.alcun.dev/mcp`. Add it as a remote
-Streamable HTTP server in your MCP client. Authentication is not required.
-For a self-hosted instance, use your server origin followed by `/mcp`.
+Add `https://signalboarder.alcun.dev/mcp` as a remote Streamable HTTP server
+in your MCP client. For self-hosting, use your server origin plus `/mcp`.
 
-The tool accepts `{"crs":"KGX","rows":5}`. `crs` is a three-letter station
-code, case-insensitive; `rows` is an integer from 1 to 10, default 2. It returns
-the departure JSON documented above as both text and structured content.
-There is no station-search or journey-planning tool. Use the board's station
-picker to look up codes. Respect `stale` and preserve National Rail attribution.
+Try: **“What are the next five trains from King's Cross?”**
 
-To check the connection without an MCP client:
+| Tool | Arguments | Result |
+|---|---|---|
+| `find_station` | `query`: name, partial name or CRS; `limit`: 1–20, default 5 | `{query, stations: [{name, crs}]}` and a readable list |
+| `get_departures` | `crs`: three letters; `rows`: 1–10, default 2 | The departure JSON above and a readable board |
+
+Search is case/punctuation-insensitive: “Kings Cross” finds KGX, “St Pancras”
+finds STP, and “&” matches “and”. Exact codes and names rank first. Ask the
+user to choose when results are ambiguous. Empty searches and empty boards
+are successful results. Both tools declare output schemas for structured content.
+
+Times are UK local (`Europe/London`), 24h. `expected` is `On time`, `Delayed`
+(no estimate), `Cancelled`, an HH:MM estimate, or `No report`. `stale: true`
+means an older cached board after a failed refresh or exhausted budget; fresh
+cache hits have `stale: false`. `generatedAt` is the response timestamp, not
+the provider observation time. Preserve the National Rail attribution.
+Calling points may be missing and cover only the first portion of split trains.
+
+### Check the connection
 
 ```sh
 curl https://signalboarder.alcun.dev/mcp \
@@ -99,14 +107,45 @@ curl https://signalboarder.alcun.dev/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -H 'MCP-Protocol-Version: 2025-06-18' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_departures","arguments":{"crs":"KGX","rows":5}}}'
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"find_station","arguments":{"query":"kings cross"}}}'
+
+curl https://signalboarder.alcun.dev/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2025-06-18' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_departures","arguments":{"crs":"KGX","rows":5}}}'
 ```
 
-No session ID or persistent connection is needed. Each request counts once
-towards the same rate limit as the REST API, and both interfaces share the
-provider cache and budget. Provider errors appear as tool results with
-`isError: true`; an exhausted request limit returns HTTP 429.
-When an origin allow-list is configured, MCP rejects other browser origins.
+### Limits and protocol
+
+Each MCP request counts once against the REST API's request limit. Station
+search spends no provider budget and emits no per-search analytics. Departures
+use the existing route, cache and daily budget: at most one provider fetch per
+call. There are no arrivals, time-window or journey-planning tools.
+
+Tool failures return `isError: true` with recovery advice; invalid/unknown codes
+include up to three station suggestions where possible. HTTP 429 includes a
+retry message and `Retry-After`. Budget errors suggest checking again in five
+minutes, but exhaustion may last until the rolling 24-hour budget resets.
+
+The target protocol is `2025-06-18`; `2025-03-26` and `2024-11-05` version
+values remain accepted over this POST transport (no legacy SSE endpoint).
+Missing version headers use `2025-03-26` compatibility behaviour; unsupported
+headers return HTTP 400, per the [MCP transport specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports).
+Send one JSON-RPC message per POST; batches are rejected. Notifications receive
+HTTP 202 with no body and do not execute tools. `GET /mcp` returns HTTP 405.
+Configured origin allow-lists apply to MCP browser requests.
+
+### Bundled station data
+
+`src/stations.json` is a checked-in copy of `web/public/stations.json`, imported
+once at startup. It travels with `edge/src` in the root Docker image and works
+in an edge-only checkout without `SIGNALBOARDER_WEB_ROOT`. No station network
+requests or build-time downloads are needed. After refreshing the web dataset,
+copy it to `edge/src/stations.json`; the MCP test suite checks byte-for-byte
+agreement. Both copies are derived databases under ODbL, credited to
+[Dav Wheat](https://github.com/davwheat/uk-railway-stations) and
+[Trainline EU](https://github.com/trainline-eu/stations); see `src/stations.LICENSE.txt`.
 
 ## Configuration
 
