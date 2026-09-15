@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3] - 2026-09-15
+
+### Changed
+
+- The API-only image in `edge/Dockerfile` uses the same Bun 1 on Alpine base as
+  the full image and runs tini as PID 1.
+
 ## [1.2.2] - 2026-09-15
 
 ### Fixed
