@@ -159,7 +159,7 @@ export function createApp(config: EdgeConfig) {
 
     if (c.req.method === "OPTIONS") {
       c.header("access-control-allow-methods", "GET, POST, OPTIONS");
-      c.header("access-control-allow-headers", "Content-Type, MCP-Protocol-Version");
+      c.header("access-control-allow-headers", "Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name");
       c.header("access-control-max-age", "86400");
       return c.body(null, 204);
     }
@@ -313,19 +313,20 @@ export function createApp(config: EdgeConfig) {
       return c.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error: body must be JSON." } }, 200);
     }
 
-    const { status, body } = await handleMcp(message, async (crs, rows, query) => departures(c, crs, String(rows), query, "mcp"), config.provider.name === "fixture", who);
+    const { status, body } = await handleMcp(message, async (crs, rows, query) => departures(c, crs, String(rows), query, "mcp"), config.provider.name === "fixture", { ...who, headers: c.req.raw.headers });
     if (body === null) return c.body(null, status as 202);
     return c.json(body as object, status as 200);
   });
 
   // A spec-compliant client probes here first and a 405 is the right answer, so
   // this is its own ok event rather than a rejection. It is also the tell for a
-  // client that only speaks the old SSE transport and never reaches initialize.
+  // client that only speaks the old SSE transport and never reaches initialize
+  // or server/discover.
   app.get("/mcp", (c) => {
     lizard("mcp_sse_probed", undefined, undefined, "ok", { ip: c.get("clientAddress"), ua: c.req.header("user-agent") });
     return c.json({
       error: "This MCP endpoint is stateless and accepts JSON-RPC over POST.",
-      hint: "POST an initialize request, then use tools/list and tools/call.",
+      hint: "POST server/discover (MCP 2026-07-28) or an initialize request (earlier versions), then use tools/list and tools/call.",
     }, 405, { Allow: "POST, OPTIONS" });
   });
 

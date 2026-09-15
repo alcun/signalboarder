@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.3.0] - 2026-09-15
+
+### Added
+
+- MCP protocol `2026-07-28` alongside the earlier versions. The server answers
+  `server/discover`, which Claude.ai sends before connecting, and serves
+  stateless requests that carry their version in `_meta`. Modern results carry
+  `resultType`, the server identity and cache hints on `tools/list`. An
+  unsupported version or a header that contradicts the body gets the error the
+  specification defines. Clients using `initialize` see no change.
+- `mcp_connected` is also logged for `server/discover`, and modern tool listings
+  and calls record the client name and protocol. Browser clients may send the
+  `Mcp-Method` and `Mcp-Name` headers.
+
+### Fixed
+
+- The edge README no longer says station search sends no analytics.
+
 ## [1.2.4] - 2026-09-15
 
 ### Added

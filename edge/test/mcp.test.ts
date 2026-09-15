@@ -355,7 +355,7 @@ describe("MCP review fixes", () => {
     const network = spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
     process.env.LIZARD_SECRET_KEY = "test-only-key";
     try {
-      await post({ jsonrpc: "2.0", id: 1, method: "server/discover" });
+      await post({ jsonrpc: "2.0", id: 1, method: "resources/list" });
       await post({ jsonrpc: "2.0", id: 2, method: "ping" });
       await post({ jsonrpc: "2.0", method: "notifications/initialized" });
       await post({ jsonrpc: "2.0", id: 3, method: "initialize", params: { protocolVersion: "2099-01-01", clientInfo: { name: "x".repeat(100), version: "1" } } });

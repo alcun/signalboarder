@@ -216,7 +216,7 @@ curl https://signalboarder.alcun.dev/mcp \
 ### Limits and protocol
 
 Each MCP request counts once against the REST API's request limit. Station
-search spends no provider budget and emits no per-search analytics. Standard
+search spends no provider budget. Standard
 stdout `request` access logs remain enabled for `/mcp`. Departures
 use the existing route, cache and daily budget: at most one provider fetch per
 call. There are no arrivals or journey-planning tools, and no queries beyond two hours.
@@ -228,11 +228,16 @@ same code again. Queries shorter than three characters match name/code prefixes 
 retry message and `Retry-After`. Budget errors suggest checking again in five
 minutes, but exhaustion may last until the rolling 24-hour budget resets.
 
-The target protocol is `2025-11-25`. `initialize` echoes `2025-06-18`,
-`2025-03-26` or `2024-11-05` when a client asks for one and otherwise answers
-`2025-11-25`, over this POST transport (no legacy SSE endpoint). The
-`MCP-Protocol-Version` header is deliberately not enforced: both tools behave
-the same in every version, and a strict check once rejected Claude's connector
+The server speaks protocol `2026-07-28` alongside the earlier versions. A
+modern client can call `server/discover` and send stateless requests carrying
+`io.modelcontextprotocol/protocolVersion` in `_meta`; results then include
+`resultType`, the server identity, and cache hints on `tools/list`. An
+unsupported `_meta` version gets `-32022` with the supported list, and a header
+that contradicts the body gets `-32020`, both with HTTP 400. Missing `Mcp-*`
+headers are tolerated. Earlier clients use `initialize`, which echoes
+`2025-06-18`, `2025-03-26` or `2024-11-05` when asked and otherwise answers
+`2025-11-25`, over this POST transport (no legacy SSE endpoint). A version
+header alone is never enforced: a strict check once rejected Claude's connector
 when the specification moved on.
 Send one JSON-RPC message per POST; batches are rejected. Notifications receive
 HTTP 202 with no body and do not execute tools. `GET /mcp` returns HTTP 405.
