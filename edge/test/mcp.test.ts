@@ -2,6 +2,7 @@ import pkg from "../package.json";
 import { describe, expect, test } from "bun:test";
 import { createApp } from "../src/app";
 import { createFixtureProvider } from "../src/providers";
+import { PROTOCOL_VERSIONS } from "../src/mcp";
 
 const app = createApp({ provider: createFixtureProvider(), log: () => {} });
 
@@ -327,7 +328,7 @@ describe("MCP review fixes", () => {
     expect(stationHint("kgx")).not.toContain("(KGX)");
   });
 
-  test("search keeps access logs without sending LoggerLizard analytics", async () => {
+  test("search keeps access logs and sends only its MCP tool call to LoggerLizard", async () => {
     const { spyOn } = await import("bun:test");
     const previousKey = process.env.LIZARD_SECRET_KEY;
     const network = spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
@@ -335,10 +336,46 @@ describe("MCP review fixes", () => {
     try {
       const c = client();
       await c.call("find_station", { query: "Kings Cross" });
-      expect(network).not.toHaveBeenCalled();
+      expect(network.mock.calls.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([
+        expect.objectContaining({ event: "mcp_tool_called", metadata: { tool: "find_station" }, status: "ok" }),
+      ]);
       expect(c.fetches()).toBe(0);
       expect(c.logs).toHaveLength(1);
       expect(c.logs[0]).toMatchObject({ event: "request", method: "POST", path: "/mcp", status: 200 });
+    } finally {
+      network.mockRestore();
+      if (previousKey === undefined) delete process.env.LIZARD_SECRET_KEY;
+      else process.env.LIZARD_SECRET_KEY = previousKey;
+    }
+  });
+
+  test("logs the protocol conversation, tags MCP departures and skips routine probes", async () => {
+    const { spyOn } = await import("bun:test");
+    const previousKey = process.env.LIZARD_SECRET_KEY;
+    const network = spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
+    process.env.LIZARD_SECRET_KEY = "test-only-key";
+    try {
+      await post({ jsonrpc: "2.0", id: 1, method: "server/discover" });
+      await post({ jsonrpc: "2.0", id: 2, method: "ping" });
+      await post({ jsonrpc: "2.0", method: "notifications/initialized" });
+      await post({ jsonrpc: "2.0", id: 3, method: "initialize", params: { protocolVersion: "2099-01-01", clientInfo: { name: "x".repeat(100), version: "1" } } });
+      await post({ jsonrpc: "2.0", id: 4, method: "tools/list" });
+      await post({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "get_departures", arguments: { crs: "GNW" } } });
+      await post({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "nope", arguments: {} } });
+      await post([{ jsonrpc: "2.0", id: 7, method: "ping" }]);
+      await post({ jsonrpc: "2.0", id: 8, method: "made/up" });
+      await app.fetch(new Request("http://edge/mcp"));
+      const sent = network.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+      expect(sent.map((event) => event.event)).toEqual([
+        "mcp_connected", "mcp_tools_listed", "departures", "mcp_tool_called",
+        "mcp_rejected", "mcp_rejected", "mcp_rejected", "mcp_sse_probed",
+      ]);
+      expect(sent[0].metadata).toEqual({ client: "x".repeat(64), client_version: "1", protocol: PROTOCOL_VERSIONS[0], protocol_asked: "2099-01-01" });
+      expect(sent[2].metadata.surface).toBe("mcp");
+      expect(sent[3]).toMatchObject({ metadata: { tool: "get_departures" }, status: "ok" });
+      expect(sent.slice(4, 7).map((event) => event.metadata)).toEqual([
+        { reason: "unknown_tool", tool: "nope" }, { reason: "batch" }, { reason: "unknown_method", method: "made/up" },
+      ]);
     } finally {
       network.mockRestore();
       if (previousKey === undefined) delete process.env.LIZARD_SECRET_KEY;

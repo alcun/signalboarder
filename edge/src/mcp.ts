@@ -1,5 +1,6 @@
 /** Stateless Streamable HTTP; departures always use the shared route. */
 import pkg from "../package.json";
+import { lizard } from "./lizard";
 import type { Board } from "./departures";
 import type { DepartureWindow } from "./providers";
 import { findStations, stationHint, stationByCrs } from "./stations";
@@ -153,30 +154,74 @@ async function callTool(id: JsonRpcRequest["id"], name: string, args: Record<str
   return success(id, board, boardText(board, query));
 }
 
-export async function handleMcp(message: unknown, dispatch: Dispatch, fixture = false): Promise<McpReply> {
-  if (!message || Array.isArray(message) || typeof message !== "object") return error(null, -32600, "Invalid request. Send one JSON-RPC message, not a batch.");
+export type McpContext = { ip?: string | null; ua?: string | null };
+
+// Client-declared text on its way into analytics: clamped, never trusted.
+const declared = (value: unknown) => (typeof value === "string" && value ? value.slice(0, 64) : undefined);
+
+// Methods a normal client probes and expects to be refused. Claude.ai sends
+// server/discover before every initialize. Answered, but not logged as
+// rejections, or routine handshakes become the most common MCP failure.
+const PROBES = new Set(["server/discover", "resources/list", "prompts/list"]);
+
+/**
+ * Analytics, matching the other fleet MCP servers. A departures call already
+ * logs through the shared route (tagged surface: mcp), but who connected, with
+ * which client and what failed before a tool ran is otherwise invisible. ping
+ * and notifications stay unlogged: per-session chatter buries everything else.
+ */
+export async function handleMcp(message: unknown, dispatch: Dispatch, fixture = false, ctx?: McpContext): Promise<McpReply> {
+  const rejected = (reason: string, extra?: Record<string, unknown>) => lizard("mcp_rejected", { reason, ...extra }, undefined, "error", ctx);
+  if (!message || Array.isArray(message) || typeof message !== "object") {
+    rejected(Array.isArray(message) ? "batch" : "not_an_object");
+    return error(null, -32600, "Invalid request. Send one JSON-RPC message, not a batch.");
+  }
   const request = message as JsonRpcRequest;
   if (request.jsonrpc !== "2.0" || typeof request.method !== "string" || !request.method ||
       (request.id !== undefined && typeof request.id !== "string" && (typeof request.id !== "number" || !Number.isInteger(request.id))) ||
-      (request.params !== undefined && (!request.params || typeof request.params !== "object" || Array.isArray(request.params)))) return error(null, -32600, "Invalid request.");
+      (request.params !== undefined && (!request.params || typeof request.params !== "object" || Array.isArray(request.params)))) {
+    rejected("invalid_request");
+    return error(null, -32600, "Invalid request.");
+  }
   if (request.id === undefined) return { status: 202, body: null };
   if (request.method === "ping") return reply(request.id, {});
   if (request.method === "initialize") {
     const requested = request.params?.protocolVersion;
     const protocolVersion = typeof requested === "string" && PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0];
+    const client = request.params?.clientInfo as { name?: unknown; version?: unknown } | undefined;
+    lizard("mcp_connected", {
+      client: declared(client?.name),
+      client_version: declared(client?.version),
+      protocol: protocolVersion,
+      protocol_asked: declared(requested),
+    }, undefined, "ok", ctx);
     return reply(request.id, {
       protocolVersion, capabilities: { tools: { listChanged: false } },
       serverInfo: { name: "signalboarder", title: "Signalboarder", version: pkg.version },
       instructions: "Use find_station to turn a station name into a CRS code, then get_departures for the next 1–10 trains (default 2). Resolve ambiguous station names with the user. Both tools share the request limit; station search uses no provider budget and each departure call makes at most one provider fetch. Preserve National Rail attribution, explain stale results, and treat times as Europe/London. generatedAt is response time, not data age. Respect Retry-After on HTTP 429. For later departures use time_offset and optional time_window, whose sum must be at most 120 minutes. There is no support beyond the next two hours, arrivals or journey planning. Future status may change.",
     });
   }
-  if (request.method === "tools/list") return reply(request.id, { tools: [departureTool, stationTool] });
+  if (request.method === "tools/list") {
+    lizard("mcp_tools_listed", undefined, undefined, "ok", ctx);
+    return reply(request.id, { tools: [departureTool, stationTool] });
+  }
   if (request.method === "tools/call") {
     const params = request.params ?? {};
-    if (params.name !== departureTool.name && params.name !== stationTool.name) return error(request.id, -32602, `Unknown tool: ${String(params.name ?? "")}`);
+    if (params.name !== departureTool.name && params.name !== stationTool.name) {
+      rejected("unknown_tool", { tool: declared(params.name) });
+      return error(request.id, -32602, `Unknown tool: ${String(params.name ?? "")}`);
+    }
     const args = params.arguments;
-    if (!args || typeof args !== "object" || Array.isArray(args)) return toolError(request.id, "Tool arguments must be an object.");
-    return callTool(request.id, params.name, args as Record<string, unknown>, dispatch, fixture);
+    if (!args || typeof args !== "object" || Array.isArray(args)) {
+      rejected("bad_arguments", { tool: params.name });
+      return toolError(request.id, "Tool arguments must be an object.");
+    }
+    const startedAt = Date.now();
+    const result = await callTool(request.id, params.name, args as Record<string, unknown>, dispatch, fixture);
+    const failed = (result.body as { result: { isError: boolean } }).result.isError;
+    lizard("mcp_tool_called", { tool: params.name }, Date.now() - startedAt, failed ? "error" : "ok", ctx);
+    return result;
   }
+  if (!PROBES.has(request.method)) rejected("unknown_method", { method: declared(request.method) });
   return error(request.id, -32601, `Unknown method: ${request.method}`);
 }

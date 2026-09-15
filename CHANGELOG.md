@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.4] - 2026-09-15
+
+### Added
+
+- The MCP server records connections, tool listings, tool calls and rejected
+  requests in LoggerLizard, like the other fleet MCP servers. Departures fetched
+  over MCP carry `surface: mcp`, and `GET /mcp` probes are recorded. Routine
+  probes such as `server/discover`, which Claude.ai sends before connecting,
+  are answered but not counted as rejections.
+
 ## [1.2.3] - 2026-09-15
 
 ### Changed

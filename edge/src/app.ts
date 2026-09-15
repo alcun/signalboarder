@@ -206,7 +206,7 @@ export function createApp(config: EdgeConfig) {
     return next();
   });
 
-  async function departures(c: Context, crs: string, rowQuery?: string, query?: DepartureWindow) {
+  async function departures(c: Context, crs: string, rowQuery?: string, query?: DepartureWindow, surface?: "mcp") {
     const requestId = c.get("requestId");
 
     // Server-side analytics for this route only, and deliberately NOT on every
@@ -217,8 +217,10 @@ export function createApp(config: EdgeConfig) {
     // browser SDK's question, and the web half answers it in the same project.
     const startedAt = now();
     const who = { ip: c.get("clientAddress"), ua: c.req.header("user-agent") };
+    // surface arrives as an in-process argument from POST /mcp, never a header,
+    // so no outside caller can label its own traffic as MCP.
     const note = (event: string, metadata: Record<string, unknown>, status: string) =>
-      lizard(event, metadata, now() - startedAt, status, who);
+      lizard(event, surface ? { ...metadata, surface } : metadata, now() - startedAt, status, who);
 
     if (!CRS_PATTERN.test(crs)) {
       note("departures_rejected", { crs: crs.slice(0, 8) }, "bad_crs");
@@ -302,24 +304,30 @@ export function createApp(config: EdgeConfig) {
 
   app.post("/mcp", async (c) => {
     c.header("cache-control", "no-store");
+    const who = { ip: c.get("clientAddress"), ua: c.req.header("user-agent") };
     let message: unknown;
     try {
       message = await c.req.json();
     } catch {
+      lizard("mcp_rejected", { reason: "unparseable_body" }, undefined, "error", who);
       return c.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error: body must be JSON." } }, 200);
     }
 
-    const { status, body } = await handleMcp(message, async (crs, rows, query) => departures(c, crs, String(rows), query), config.provider.name === "fixture");
+    const { status, body } = await handleMcp(message, async (crs, rows, query) => departures(c, crs, String(rows), query, "mcp"), config.provider.name === "fixture", who);
     if (body === null) return c.body(null, status as 202);
     return c.json(body as object, status as 200);
   });
 
-  app.get("/mcp", (c) =>
-    c.json({
+  // A spec-compliant client probes here first and a 405 is the right answer, so
+  // this is its own ok event rather than a rejection. It is also the tell for a
+  // client that only speaks the old SSE transport and never reaches initialize.
+  app.get("/mcp", (c) => {
+    lizard("mcp_sse_probed", undefined, undefined, "ok", { ip: c.get("clientAddress"), ua: c.req.header("user-agent") });
+    return c.json({
       error: "This MCP endpoint is stateless and accepts JSON-RPC over POST.",
       hint: "POST an initialize request, then use tools/list and tools/call.",
-    }, 405, { Allow: "POST, OPTIONS" }),
-  );
+    }, 405, { Allow: "POST, OPTIONS" });
+  });
 
   app.notFound((c) => fail(c, 404, "not_found"));
 
